@@ -1,0 +1,9 @@
+packages:
+  - "api"
+  - "web"
+  - "app"
+  - "packages/*"
+allowBuilds:
+  less: true
+  nx: true
+  unrs-resolver: true

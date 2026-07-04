@@ -1,0 +1,14 @@
+clientid: thingsvu
+secret: gsokYUy0HnWW6ZiQ9EDzJl2VO1we4yTJ
+
+
+issuer: "http://localhost:8081/realms/thingsvu",
+authorization_endpoint: "http://localhost:8081/realms/thingsvu/protocol/openid-connect/auth",
+token_endpoint: "http://localhost:8081/realms/thingsvu/protocol/openid-connect/token",
+introspection_endpoint: "http://localhost:8081/realms/thingsvu/protocol/openid-connect/token/introspect",
+userinfo_endpoint: "http://localhost:8081/realms/thingsvu/protocol/openid-connect/userinfo",
+end_session_endpoint: "http://localhost:8081/realms/thingsvu/protocol/openid-connect/logout",
+frontchannel_logout_session_supported: true,
+frontchannel_logout_supported: true,
+jwks_uri: "http://localhost:8081/realms/thingsvu/protocol/openid-connect/certs",
+check_session_iframe: "http://localhost:8081/realms/thingsvu/protocol/openid-connect/login-status-iframe.html",

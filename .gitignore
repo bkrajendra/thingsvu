@@ -1,0 +1,9 @@
+node_modules
+/api/node_modules
+/client_secret_389163180611-f4lf03pmo2vq58strq5rq348phl4cpgr.apps.googleusercontent.com.json
+/web/node_modules
+/web/.vscode
+/web/.claude
+/web/.angular
+/api/dist
+/devops/keycloak/keycloak_data
