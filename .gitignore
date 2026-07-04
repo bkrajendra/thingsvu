@@ -7,3 +7,4 @@ node_modules
 /web/.angular
 /api/dist
 /devops/keycloak/keycloak_data
+keycloak.txt
