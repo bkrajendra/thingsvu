@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ThingsVU — the clear view over your connected fleet</title>
+<meta name="description" content="ThingsVU is a multi-tenant IoT cloud platform: register devices, stream their telemetry in real time, build dashboards, and push secure over-the-air updates — with enterprise auth built in." />
+<meta property="og:title" content="ThingsVU — IoT cloud platform" />
+<meta property="og:description" content="Register devices, stream telemetry, visualize dashboards, and ship OTA updates — with enterprise auth built in." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://thingsvu.com" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0F14'/%3E%3Cg stroke='%233DE1C4' stroke-width='2.4' stroke-linecap='round' fill='none'%3E%3Cpath d='M5 17 L10 17 L13 9 L16 23 L19 13 L22 17 L27 17'/%3E%3C/g%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#0B0F14;
+    --ink-2:#0E141C;
+    --panel:#121A24;
+    --panel-2:#16202C;
+    --line:#1F2C3A;
+    --line-soft:#18232F;
+    --fg:#E9EFF3;
+    --fg-dim:#9DB0BF;
+    --fg-mute:#657585;
+    --cyan:#3DE1C4;
+    --cyan-deep:#16B69A;
+    --amber:#FFB020;
+    --violet:#9A8CF0;
+    --glow: 0 0 24px rgba(61,225,196,.18);
+    --radius:16px;
+    --maxw:1180px;
+    --ease:cubic-bezier(.22,.61,.36,1);
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--ink);
+    color:var(--fg);
+    font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none}
+  ::selection{background:rgba(61,225,196,.28);color:#fff}
+
+  .tv-wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+
+  .tv-mono{font-family:"IBM Plex Mono",monospace}
+  .tv-key{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:12px;letter-spacing:.06em;color:var(--cyan);
+    text-transform:none;
+  }
+  .tv-eyebrow{
+    font-family:"IBM Plex Mono",monospace;
+    font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--fg-mute);display:inline-flex;align-items:center;gap:9px;
+  }
+  .tv-eyebrow::before{content:"";width:22px;height:1px;background:var(--line);display:inline-block}
+
+  h1,h2,h3{font-family:"Space Grotesk",sans-serif;font-weight:600;line-height:1.05;letter-spacing:-.02em}
+
+  /* ---------- Nav ---------- */
+  .tv-nav{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:blur(12px);
+    background:rgba(11,15,20,.72);
+    border-bottom:1px solid var(--line-soft);
+  }
+  .tv-nav__in{display:flex;align-items:center;gap:28px;height:66px}
+  .tv-logo{display:inline-flex;align-items:center;gap:10px;font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:20px;letter-spacing:-.02em}
+  .tv-logo__mark{width:26px;height:26px;flex:none;display:block}
+  .tv-logo__vu{color:var(--cyan);position:relative}
+  .tv-logo__vu::after{content:"";position:absolute;left:0;right:0;bottom:-3px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--cyan),transparent)}
+  .tv-nav__links{display:flex;align-items:center;gap:26px;margin-left:8px}
+  .tv-nav__links a{color:var(--fg-dim);font-size:15px;transition:color .2s var(--ease)}
+  .tv-nav__links a:hover{color:var(--fg)}
+  .tv-nav__spacer{flex:1}
+  .tv-nav__actions{display:flex;align-items:center;gap:14px}
+  .tv-nav__toggle{display:none;background:none;border:1px solid var(--line);color:var(--fg);width:40px;height:38px;border-radius:10px;cursor:pointer}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    font-family:"IBM Plex Sans",sans-serif;font-weight:500;font-size:15px;
+    padding:11px 18px;border-radius:11px;cursor:pointer;border:1px solid transparent;
+    transition:transform .18s var(--ease),background .2s var(--ease),border-color .2s var(--ease),box-shadow .2s var(--ease);
+    white-space:nowrap;
+  }
+  .btn--primary{background:var(--cyan);color:#04120E;font-weight:600;box-shadow:var(--glow)}
+  .btn--primary:hover{transform:translateY(-1px);background:#54ecd2;box-shadow:0 0 30px rgba(61,225,196,.32)}
+  .btn--ghost{background:transparent;color:var(--fg);border-color:var(--line)}
+  .btn--ghost:hover{border-color:var(--cyan);color:var(--cyan)}
+  .btn--link{padding:0;color:var(--fg-dim)}
+  .btn--link:hover{color:var(--cyan)}
+
+  /* ---------- Hero ---------- */
+  .tv-hero{position:relative;padding:74px 0 60px}
+  .tv-hero__grid{display:grid;grid-template-columns:1.02fr .98fr;gap:56px;align-items:center}
+  .tv-hero__copy{max-width:560px}
+  .tv-hero h1{font-size:clamp(38px,5.4vw,64px);margin:20px 0 0}
+  .tv-hero h1 .u{color:var(--cyan)}
+  .tv-hero__sub{color:var(--fg-dim);font-size:clamp(16px,1.5vw,18.5px);margin-top:20px;max-width:520px}
+  .tv-hero__ctas{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:32px}
+  .tv-hero__trust{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:30px;color:var(--fg-mute);font-size:13px}
+  .tv-hero__trust span{display:inline-flex;align-items:center;gap:7px}
+  .tv-dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+
+  .tv-bg{position:absolute;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+  .tv-bg::before{content:"";position:absolute;top:-120px;right:-160px;width:620px;height:620px;
+    background:radial-gradient(circle at center,rgba(61,225,196,.10),transparent 62%);}
+  .tv-bg::after{content:"";position:absolute;inset:0;
+    background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
+    background-size:64px 64px;opacity:.28;
+    mask-image:radial-gradient(circle at 70% 20%,#000,transparent 70%);
+    -webkit-mask-image:radial-gradient(circle at 70% 20%,#000,transparent 70%);}
+
+  /* ---------- Console (signature) ---------- */
+  .tv-console{
+    background:linear-gradient(180deg,var(--panel),var(--ink-2));
+    border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:0 30px 60px -30px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.02);
+    overflow:hidden;
+  }
+  .tv-console__bar{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line-soft);background:rgba(255,255,255,.015)}
+  .tv-console__title{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--fg-dim)}
+  .tv-console__title b{color:var(--fg)}
+  .tv-live{display:inline-flex;align-items:center;gap:7px;margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--cyan)}
+  .tv-live i{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 9px var(--cyan);animation:pulse 1.8s var(--ease) infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.72)}}
+
+  .tv-scope{position:relative;padding:8px 8px 0}
+  .tv-scope svg{display:block;width:100%;height:auto}
+  .tv-counter{display:flex;justify-content:space-between;padding:6px 14px 12px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--fg-mute)}
+  .tv-counter b{color:var(--fg-dim);font-weight:500}
+
+  .tv-meters{padding:6px 14px 16px;display:flex;flex-direction:column;gap:11px;border-top:1px solid var(--line-soft)}
+  .tv-meter{display:grid;grid-template-columns:96px 1fr 46px;align-items:center;gap:12px}
+  .tv-meter__name{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--fg-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tv-meter__track{height:7px;border-radius:6px;background:#0c141c;border:1px solid var(--line-soft);overflow:hidden;position:relative}
+  .tv-meter__fill{position:absolute;left:0;top:0;bottom:0;width:20%;border-radius:6px;
+    background:linear-gradient(90deg,var(--cyan-deep),var(--cyan) 62%,var(--amber));
+    transition:width .28s linear}
+  .tv-meter__val{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--fg-mute);text-align:right}
+
+  /* ---------- Section scaffolding ---------- */
+  .tv-sec{padding:88px 0;border-top:1px solid var(--line-soft)}
+  .tv-sec__head{max-width:640px}
+  .tv-sec__head h2{font-size:clamp(28px,3.6vw,42px);margin:16px 0 0}
+  .tv-sec__head p{color:var(--fg-dim);font-size:17px;margin-top:16px}
+
+  /* ---------- Features ---------- */
+  .tv-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:44px}
+  .tv-card{
+    background:linear-gradient(180deg,var(--panel),var(--ink-2));
+    border:1px solid var(--line-soft);border-radius:14px;padding:24px 22px 26px;
+    transition:transform .22s var(--ease),border-color .22s var(--ease),box-shadow .22s var(--ease);
+  }
+  .tv-card:hover{transform:translateY(-3px);border-color:#2b3d4e;box-shadow:0 22px 40px -28px rgba(0,0,0,.8)}
+  .tv-card__ico{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;background:rgba(61,225,196,.09);border:1px solid rgba(61,225,196,.18);margin-bottom:18px}
+  .tv-card__ico svg{width:22px;height:22px;stroke:var(--cyan);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .tv-card__key{display:block;margin-bottom:9px}
+  .tv-card h3{font-size:19px;margin-bottom:9px}
+  .tv-card p{color:var(--fg-dim);font-size:14.5px}
+
+  /* ---------- Flow ---------- */
+  .tv-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:44px}
+  .tv-step{position:relative;padding:26px 20px;border:1px solid var(--line-soft);border-radius:14px;background:var(--ink-2)}
+  .tv-step__n{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--cyan);letter-spacing:.08em}
+  .tv-step h3{font-size:18px;margin:14px 0 8px}
+  .tv-step p{color:var(--fg-dim);font-size:14px}
+  .tv-step__code{margin-top:14px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--fg-mute);background:#0b1219;border:1px solid var(--line-soft);border-radius:8px;padding:8px 10px;overflow-x:auto;white-space:nowrap}
+  .tv-step__code .c{color:var(--amber)}
+  .tv-step__code .g{color:var(--cyan)}
+
+  /* ---------- Provisioning + Security split ---------- */
+  .tv-split{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:44px}
+  .tv-block{border:1px solid var(--line-soft);border-radius:16px;background:linear-gradient(180deg,var(--panel),var(--ink-2));padding:28px 26px}
+  .tv-block h3{font-size:20px;margin-bottom:6px}
+  .tv-block>p{color:var(--fg-dim);font-size:14.5px;margin-bottom:20px}
+  .tv-list{display:flex;flex-direction:column;gap:2px}
+  .tv-row{display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-top:1px solid var(--line-soft)}
+  .tv-row:first-child{border-top:none}
+  .tv-row__k{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--cyan);flex:none;width:118px;padding-top:1px}
+  .tv-row__b{flex:1}
+  .tv-row__b b{font-weight:600;font-size:15px}
+  .tv-row__b span{display:block;color:var(--fg-dim);font-size:13.5px;margin-top:2px}
+  .tv-tag{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.05em;color:var(--amber);border:1px solid rgba(255,176,32,.32);border-radius:5px;padding:1px 6px;margin-left:8px;vertical-align:middle}
+  .tv-check{width:18px;height:18px;flex:none;margin-top:1px;stroke:var(--cyan);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+  /* ---------- CTA ---------- */
+  .tv-cta{margin:0 auto;text-align:center;padding:96px 24px}
+  .tv-cta__box{max-width:760px;margin:0 auto;border:1px solid var(--line);border-radius:22px;padding:56px 32px;position:relative;overflow:hidden;background:linear-gradient(180deg,var(--panel),var(--ink-2))}
+  .tv-cta__box::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% -10%,rgba(61,225,196,.14),transparent 60%)}
+  .tv-cta h2{position:relative;font-size:clamp(28px,4vw,44px)}
+  .tv-cta p{position:relative;color:var(--fg-dim);font-size:17px;margin:16px auto 30px;max-width:500px}
+  .tv-cta__ctas{position:relative;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+
+  /* ---------- Footer ---------- */
+  .tv-footer{border-top:1px solid var(--line-soft);padding:56px 0 40px}
+  .tv-footer__grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:32px}
+  .tv-footer__brand p{color:var(--fg-mute);font-size:14px;margin-top:14px;max-width:280px}
+  .tv-footer h4{font-family:"IBM Plex Mono",monospace;font-weight:500;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-mute);margin-bottom:16px}
+  .tv-footer ul{list-style:none;display:flex;flex-direction:column;gap:11px}
+  .tv-footer li a{color:var(--fg-dim);font-size:14.5px;transition:color .2s var(--ease)}
+  .tv-footer li a:hover{color:var(--cyan)}
+  .tv-footer__base{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-top:48px;padding-top:24px;border-top:1px solid var(--line-soft);color:var(--fg-mute);font-size:13px;font-family:"IBM Plex Mono",monospace}
+
+  /* ---------- Reveal ---------- */
+  .tv-reveal{opacity:0;transform:translateY(18px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+  .tv-reveal.is-in{opacity:1;transform:none}
+
+  /* ---------- Responsive ---------- */
+  @media(max-width:960px){
+    .tv-hero__grid{grid-template-columns:1fr;gap:40px}
+    .tv-hero{padding-top:52px}
+    .tv-cards{grid-template-columns:1fr 1fr}
+    .tv-flow{grid-template-columns:1fr 1fr}
+    .tv-footer__grid{grid-template-columns:1fr 1fr}
+  }
+  @media(max-width:760px){
+    .tv-nav__links,.tv-nav__actions .btn--ghost{display:none}
+    .tv-nav__toggle{display:inline-flex;align-items:center;justify-content:center}
+    .tv-nav__links.is-open{display:flex;position:absolute;top:66px;left:0;right:0;flex-direction:column;gap:0;background:var(--ink-2);border-bottom:1px solid var(--line);padding:8px 0}
+    .tv-nav__links.is-open a{padding:14px 24px;border-top:1px solid var(--line-soft)}
+    .tv-split{grid-template-columns:1fr}
+    .tv-sec{padding:64px 0}
+  }
+  @media(max-width:520px){
+    .tv-cards{grid-template-columns:1fr}
+    .tv-flow{grid-template-columns:1fr}
+    .tv-footer__grid{grid-template-columns:1fr}
+    .tv-meter{grid-template-columns:80px 1fr 40px}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+    .tv-reveal{opacity:1;transform:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<header class="tv-nav">
+  <div class="tv-wrap tv-nav__in">
+    <a class="tv-logo" href="#top" aria-label="ThingsVU home">
+      <svg class="tv-logo__mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="#111A24"/>
+        <g stroke="#3DE1C4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+          <path d="M5 17 L10 17 L13 9 L16 23 L19 13 L22 17 L27 17"/>
+        </g>
+      </svg>
+      Things<span class="tv-logo__vu">VU</span>
+    </a>
+    <nav class="tv-nav__links" id="navlinks">
+      <a href="#platform">Platform</a>
+      <a href="#how">How it works</a>
+      <a href="#connect">Provisioning</a>
+      <a href="#security">Security</a>
+    </nav>
+    <div class="tv-nav__spacer"></div>
+    <div class="tv-nav__actions">
+      <a class="btn btn--ghost" href="#">Sign in</a>
+      <a class="btn btn--primary" href="#start">Start free</a>
+      <button class="tv-nav__toggle" id="navtoggle" aria-label="Toggle menu" aria-expanded="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- HERO -->
+<section class="tv-hero">
+  <div class="tv-bg" aria-hidden="true"></div>
+  <div class="tv-wrap tv-hero__grid">
+    <div class="tv-hero__copy">
+      <span class="tv-eyebrow">Multi-tenant IoT cloud platform</span>
+      <h1>Your device fleet,<br>in full <span class="u">view</span>.</h1>
+      <p class="tv-hero__sub">ThingsVU registers your devices, streams their telemetry in real time, and pushes secure over-the-air updates — with enterprise sign-in built in from day one.</p>
+      <div class="tv-hero__ctas">
+        <a class="btn btn--primary" href="#start">Start free</a>
+        <a class="btn btn--ghost" href="#">Book a demo</a>
+        <a class="btn btn--link tv-mono" href="#">Read the docs →</a>
+      </div>
+      <div class="tv-hero__trust">
+        <span><i class="tv-dot"></i> MQTT &amp; HTTPS ingestion</span>
+        <span><i class="tv-dot"></i> OAuth2 + PKCE</span>
+        <span><i class="tv-dot"></i> Tenant isolation</span>
+      </div>
+    </div>
+
+    <!-- SIGNATURE: live telemetry console -->
+    <div class="tv-console" role="img" aria-label="Live telemetry console showing device signals and level meters">
+      <div class="tv-console__bar">
+        <span class="tv-console__title"><b>fleet</b>.telemetry</span>
+        <span class="tv-live"><i></i> live</span>
+      </div>
+      <div class="tv-scope">
+        <svg viewBox="0 0 600 240" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="fade" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0" stop-color="#3DE1C4" stop-opacity=".16"/>
+              <stop offset="1" stop-color="#3DE1C4" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <g stroke="#17222E" stroke-width="1">
+            <line x1="0" y1="60" x2="600" y2="60"/>
+            <line x1="0" y1="120" x2="600" y2="120"/>
+            <line x1="0" y1="180" x2="600" y2="180"/>
+          </g>
+          <polyline id="wave3" fill="none" stroke="#9A8CF0" stroke-width="1.6" stroke-opacity=".55" stroke-linejoin="round" points=""/>
+          <polyline id="wave2" fill="none" stroke="#FFB020" stroke-width="1.7" stroke-opacity=".8" stroke-linejoin="round" points=""/>
+          <polygon  id="fill1" fill="url(#fade)" points=""/>
+          <polyline id="wave1" fill="none" stroke="#3DE1C4" stroke-width="2.2" stroke-linejoin="round" points=""/>
+        </svg>
+      </div>
+      <div class="tv-counter">
+        <span>msgs&nbsp;<b id="msgcount">1,284,097</b></span>
+        <span>write&nbsp;<b id="lat">6.2 ms</b>&nbsp;p99</span>
+      </div>
+      <div class="tv-meters" id="meters">
+        <div class="tv-meter"><span class="tv-meter__name">sensor-a17</span><div class="tv-meter__track"><span class="tv-meter__fill"></span></div><span class="tv-meter__val">—</span></div>
+        <div class="tv-meter"><span class="tv-meter__name">gw-eu-01</span><div class="tv-meter__track"><span class="tv-meter__fill"></span></div><span class="tv-meter__val">—</span></div>
+        <div class="tv-meter"><span class="tv-meter__name">pump-07</span><div class="tv-meter__track"><span class="tv-meter__fill"></span></div><span class="tv-meter__val">—</span></div>
+        <div class="tv-meter"><span class="tv-meter__name">hvac-3b</span><div class="tv-meter__track"><span class="tv-meter__fill"></span></div><span class="tv-meter__val">—</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PLATFORM / FEATURES -->
+<section class="tv-sec" id="platform">
+  <div class="tv-wrap">
+    <div class="tv-sec__head tv-reveal">
+      <span class="tv-eyebrow">Platform</span>
+      <h2>Everything a connected product needs — nothing it doesn't.</h2>
+      <p>The essentials, built well: devices, live data, dashboards, and updates, on a foundation you can actually operate.</p>
+    </div>
+    <div class="tv-cards">
+      <article class="tv-card tv-reveal">
+        <div class="tv-card__ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></div>
+        <span class="tv-card__key tv-key">device.registry</span>
+        <h3>Device management</h3>
+        <p>Register devices from profiles, group them with tags, and track firmware and last-seen status across every tenant.</p>
+      </article>
+      <article class="tv-card tv-reveal">
+        <div class="tv-card__ico"><svg viewBox="0 0 24 24"><path d="M3 15l4-6 3 4 3-7 4 9 4-5"/></svg></div>
+        <span class="tv-card__key tv-key">telemetry.stream</span>
+        <h3>Real-time dashboards</h3>
+        <p>Live charts, gauges, tables, and maps update the instant data arrives — pushed straight to the browser over WebSocket.</p>
+      </article>
+      <article class="tv-card tv-reveal">
+        <div class="tv-card__ico"><svg viewBox="0 0 24 24"><path d="M12 3v10"/><path d="M8 9l4 4 4-4"/><rect x="4" y="15" width="16" height="6" rx="2"/></svg></div>
+        <span class="tv-card__key tv-key">ota.rollout</span>
+        <h3>Over-the-air updates</h3>
+        <p>Publish signed firmware, target a device or a whole group, and watch each unit move from queued to updated.</p>
+      </article>
+      <article class="tv-card tv-reveal">
+        <div class="tv-card__ico"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9.5 12l1.8 1.8L15 10"/></svg></div>
+        <span class="tv-card__key tv-key">auth.enterprise</span>
+        <h3>Enterprise sign-in</h3>
+        <p>Password and Google login, OAuth2 with PKCE for mobile, and cookie-based sessions for the web — no tokens in the browser.</p>
+      </article>
+      <article class="tv-card tv-reveal">
+        <div class="tv-card__ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><circle cx="7" cy="7.5" r="1"/><circle cx="7" cy="16.5" r="1"/></svg></div>
+        <span class="tv-card__key tv-key">tenant.isolation</span>
+        <h3>Multi-tenant by design</h3>
+        <p>Every tenant gets its own isolated data, users, and devices — provisioned automatically, kept strictly apart.</p>
+      </article>
+      <article class="tv-card tv-reveal">
+        <div class="tv-card__ico"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><path d="M6 15.5V9a3 3 0 013-3h9"/><path d="M15 3l3 3-3 3"/></svg></div>
+        <span class="tv-card__key tv-key">ingest.transport</span>
+        <h3>MQTT &amp; HTTP ingestion</h3>
+        <p>Connect constrained devices over MQTT or send readings over plain HTTPS — the same pipeline handles both.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="tv-sec" id="how">
+  <div class="tv-wrap">
+    <div class="tv-sec__head tv-reveal">
+      <span class="tv-eyebrow">From device to dashboard</span>
+      <h2>Four steps to a live fleet.</h2>
+      <p>The path a reading takes from a device in the field to a chart in front of you.</p>
+    </div>
+    <div class="tv-flow">
+      <div class="tv-step tv-reveal">
+        <span class="tv-step__n">step 01</span>
+        <h3>Register</h3>
+        <p>Create a device and issue an access token or MQTT credentials.</p>
+        <div class="tv-step__code"><span class="c">POST</span> <span class="g">/api/v1/devices</span></div>
+      </div>
+      <div class="tv-step tv-reveal">
+        <span class="tv-step__n">step 02</span>
+        <h3>Connect</h3>
+        <p>The device publishes readings over MQTT or HTTPS with its token.</p>
+        <div class="tv-step__code"><span class="g">tenants/…/telemetry</span></div>
+      </div>
+      <div class="tv-step tv-reveal">
+        <span class="tv-step__n">step 03</span>
+        <h3>Observe</h3>
+        <p>Telemetry lands in your dashboards and streams live to the screen.</p>
+        <div class="tv-step__code"><span class="c">WSS</span> <span class="g">/ws</span> · &lt;1s</div>
+      </div>
+      <div class="tv-step tv-reveal">
+        <span class="tv-step__n">step 04</span>
+        <h3>Update</h3>
+        <p>Push a signed firmware package and track the rollout per device.</p>
+        <div class="tv-step__code"><span class="c">POST</span> <span class="g">/ota/packages</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROVISIONING + SECURITY -->
+<section class="tv-sec" id="connect">
+  <div class="tv-wrap">
+    <div class="tv-sec__head tv-reveal">
+      <span class="tv-eyebrow">Provisioning &amp; security</span>
+      <h2>Trusted from the first packet.</h2>
+      <p>Choose how devices prove who they are, and rely on enterprise-grade controls everywhere else.</p>
+    </div>
+    <div class="tv-split">
+      <div class="tv-block tv-reveal" id="connect-methods">
+        <h3>Ways to provision a device</h3>
+        <p>Pick the method that fits your hardware and threat model.</p>
+        <div class="tv-list">
+          <div class="tv-row">
+            <span class="tv-row__k">access_token</span>
+            <div class="tv-row__b"><b>Access token</b><span>A per-device secret sent over HTTPS or as an MQTT identity. Simplest to get started.</span></div>
+          </div>
+          <div class="tv-row">
+            <span class="tv-row__k">mqtt_basic</span>
+            <div class="tv-row__b"><b>MQTT username &amp; password</b><span>Standard broker credentials, validated on connect and scoped to the device's own topics.</span></div>
+          </div>
+          <div class="tv-row">
+            <span class="tv-row__k">x509_mtls</span>
+            <div class="tv-row__b"><b>X.509 certificates<span class="tv-tag">on the roadmap</span></b><span>Mutual TLS with per-device certificates for the highest assurance.</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="tv-block tv-reveal" id="security">
+        <h3>Security you don't have to bolt on</h3>
+        <p>Sensible defaults, all the way down.</p>
+        <div class="tv-list">
+          <div class="tv-row"><svg class="tv-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><div class="tv-row__b"><b>Single sign-on &amp; social login</b><span>Password, Google, and SSO through a dedicated identity layer.</span></div></div>
+          <div class="tv-row"><svg class="tv-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><div class="tv-row__b"><b>OAuth2 with PKCE</b><span>Public-client flows for mobile; cookie-based sessions for the web app.</span></div></div>
+          <div class="tv-row"><svg class="tv-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><div class="tv-row__b"><b>Isolated per tenant</b><span>Each tenant's data lives apart and stays apart, by construction.</span></div></div>
+          <div class="tv-row"><svg class="tv-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><div class="tv-row__b"><b>Encrypted end to end</b><span>Credentials hashed at rest; TLS on every connection, brokers included.</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="tv-cta" id="start">
+  <div class="tv-cta__box tv-reveal">
+    <h2>See your fleet in ThingsVU.</h2>
+    <p>Spin up a tenant, connect your first device, and watch the data arrive — free while you build.</p>
+    <div class="tv-cta__ctas">
+      <a class="btn btn--primary" href="#">Start free</a>
+      <a class="btn btn--ghost" href="#">Talk to us</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- FOOTER -->
+<footer class="tv-footer">
+  <div class="tv-wrap">
+    <div class="tv-footer__grid">
+      <div class="tv-footer__brand">
+        <a class="tv-logo" href="#top">
+          <svg class="tv-logo__mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#111A24"/><g stroke="#3DE1C4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M5 17 L10 17 L13 9 L16 23 L19 13 L22 17 L27 17"/></g></svg>
+          Things<span class="tv-logo__vu">VU</span>
+        </a>
+        <p>The clear view over your connected fleet. Devices, telemetry, dashboards, and OTA — in one platform.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <ul>
+          <li><a href="#platform">Device management</a></li>
+          <li><a href="#platform">Dashboards</a></li>
+          <li><a href="#platform">OTA updates</a></li>
+          <li><a href="#connect">Provisioning</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Developers</h4>
+        <ul>
+          <li><a href="#">Documentation</a></li>
+          <li><a href="#">API reference</a></li>
+          <li><a href="#">MQTT guide</a></li>
+          <li><a href="#">Status</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <ul>
+          <li><a href="#">About</a></li>
+          <li><a href="mailto:hello@thingsvu.com">Contact</a></li>
+          <li><a href="#">Privacy</a></li>
+          <li><a href="#">Terms</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="tv-footer__base">
+      <span>© 2026 ThingsVU · thingsvu.com</span>
+      <span>hello@thingsvu.com</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* Mobile menu */
+  var toggle = document.getElementById('navtoggle');
+  var links = document.getElementById('navlinks');
+  if(toggle){
+    toggle.addEventListener('click', function(){
+      var open = links.classList.toggle('is-open');
+      toggle.setAttribute('aria-expanded', open ? 'true':'false');
+    });
+    links.addEventListener('click', function(e){ if(e.target.tagName==='A'){ links.classList.remove('is-open'); toggle.setAttribute('aria-expanded','false'); }});
+  }
+
+  /* Reveal on scroll */
+  var reveals = document.querySelectorAll('.tv-reveal');
+  if(reduce || !('IntersectionObserver' in window)){
+    reveals.forEach(function(el){ el.classList.add('is-in'); });
+  } else {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if(en.isIntersecting){ en.target.classList.add('is-in'); io.unobserve(en.target); }});
+    }, {threshold:.14, rootMargin:'0px 0px -8% 0px'});
+    reveals.forEach(function(el){ io.observe(el); });
+  }
+
+  /* Telemetry scope */
+  var N = 70, W = 600, H = 240;
+  var series = [
+    {el:document.getElementById('wave1'), fill:document.getElementById('fill1'), base:120, amp:52, data:[], phase:0, speed:.16, freq:.42, jitter:9},
+    {el:document.getElementById('wave2'), base:120, amp:34, data:[], phase:1.7, speed:.11, freq:.63, jitter:7},
+    {el:document.getElementById('wave3'), base:120, amp:22, data:[], phase:3.2, speed:.24, freq:.9,  jitter:6}
+  ];
+  function seed(s){ for(var i=0;i<N;i++){ s.data.push(0); } }
+  series.forEach(seed);
+
+  function nextVal(s){
+    s.phase += s.speed;
+    var v = Math.sin(s.phase*s.freq)*s.amp*0.6 + Math.sin(s.phase*s.freq*0.37+1)*s.amp*0.32;
+    v += (Math.random()-0.5)*s.jitter;
+    return v;
+  }
+  function pointsFor(s){
+    var p='';
+    for(var i=0;i<N;i++){
+      var x=(i/(N-1))*W;
+      var y=s.base - s.data[i];
+      p += x.toFixed(1)+','+y.toFixed(1)+' ';
+    }
+    return p.trim();
+  }
+  function render(){
+    series.forEach(function(s){
+      var pts = pointsFor(s);
+      s.el.setAttribute('points', pts);
+      if(s.fill){ s.fill.setAttribute('points', '0,'+H+' '+pts+' '+W+','+H); }
+    });
+  }
+  function step(){
+    series.forEach(function(s){ s.data.push(nextVal(s)); s.data.shift(); });
+    render();
+  }
+
+  if(reduce){
+    // one static, pleasant frame
+    series.forEach(function(s){ for(var i=0;i<N;i++){ s.data[i] = Math.sin(i*0.3*s.freq + s.phase)*s.amp*0.6; } });
+    render();
+  } else {
+    var last=0;
+    (function loop(t){
+      requestAnimationFrame(loop);
+      if(t-last < 55) return;      // ~18fps, smooth + light
+      last=t;
+      step();
+    })(0);
+  }
+
+  /* VU meters */
+  var fills = document.querySelectorAll('#meters .tv-meter__fill');
+  var vals  = document.querySelectorAll('#meters .tv-meter__val');
+  var targets=[], cur=[];
+  fills.forEach(function(){ targets.push(30+Math.random()*50); cur.push(30); });
+  function tickMeters(){
+    for(var i=0;i<fills.length;i++){
+      if(Math.random()<0.25){ targets[i] = 22 + Math.random()*72; }
+      cur[i] += (targets[i]-cur[i])*0.18;
+      fills[i].style.width = cur[i].toFixed(1)+'%';
+      vals[i].textContent = Math.round(cur[i]) + (cur[i]>82?'▲':'');
+    }
+  }
+  if(reduce){
+    for(var i=0;i<fills.length;i++){ fills[i].style.width=(35+i*14)+'%'; vals[i].textContent=String(35+i*14); }
+  } else {
+    setInterval(tickMeters, 460);
+    tickMeters();
+  }
+
+  /* Live counters */
+  var msg = document.getElementById('msgcount');
+  var lat = document.getElementById('lat');
+  var count = 1284097;
+  if(msg && !reduce){
+    setInterval(function(){
+      count += Math.floor(120 + Math.random()*380);
+      msg.textContent = count.toLocaleString('en-US');
+      lat.textContent = (5.4 + Math.random()*2.2).toFixed(1)+' ms';
+    }, 1400);
+  }
+})();
+</script>
+</body>
+</html>

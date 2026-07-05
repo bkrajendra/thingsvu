@@ -8,3 +8,5 @@ node_modules
 /api/dist
 /devops/keycloak/keycloak_data
 keycloak.txt
+/.superpowers
+/devops/data
