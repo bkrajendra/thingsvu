@@ -19,7 +19,7 @@ export class AuthService {
 
   async exchangeCode(
     client: Client,
-    params: { code: string; state: string },
+    params: { code: string; state: string; iss?: string },
     stored: { codeVerifier: string; state: string },
   ): Promise<TokenSet> {
     if (params.state !== stored.state) {
@@ -27,7 +27,7 @@ export class AuthService {
     }
     return client.callback(
       client.metadata.redirect_uris![0],
-      { code: params.code, state: params.state },
+      { code: params.code, state: params.state, iss: params.iss },
       { code_verifier: stored.codeVerifier, state: stored.state },
     );
   }

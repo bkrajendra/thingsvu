@@ -33,7 +33,11 @@ export class AuthController {
 
   @Get('callback')
   async callback(@Req() req: Request, @Res() res: Response): Promise<void> {
-    const { code, state } = req.query as { code?: string; state?: string };
+    const { code, state, iss } = req.query as {
+      code?: string;
+      state?: string;
+      iss?: string;
+    };
     if (
       !code ||
       !state ||
@@ -45,7 +49,7 @@ export class AuthController {
 
     const tokenSet = await this.authService.exchangeCode(
       this.client,
-      { code, state },
+      { code, state, iss },
       { codeVerifier: req.session.pkceVerifier, state: req.session.oauthState },
     );
     const sessionUser = this.authService.toSessionUser(tokenSet);
