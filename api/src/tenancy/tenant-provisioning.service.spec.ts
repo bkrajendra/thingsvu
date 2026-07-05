@@ -51,7 +51,11 @@ describe('TenantProvisioningService', () => {
   });
 
   afterAll(async () => {
-    await sequelize.query('DROP SCHEMA IF EXISTS control CASCADE');
+    // NOTE: `control` is a single shared schema, not a per-test fixture -- other spec
+    // files (e.g. device-credentials.service.spec.ts) also read/write it, and Jest runs
+    // spec files concurrently across worker processes by default. Dropping the whole
+    // `control` schema here raced with those other suites and intermittently broke them
+    // (discovered in Task 11); afterEach above already cleans up this suite's own rows.
     await sequelize.close();
   });
 
