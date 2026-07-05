@@ -57,7 +57,16 @@ export class UsersService {
     const profile = await this.findOne(id);
     if (dto.displayName !== undefined) profile.displayName = dto.displayName;
     if (dto.role !== undefined) profile.role = dto.role;
-    if (dto.status !== undefined) profile.status = dto.status;
+    if (dto.status !== undefined) {
+      profile.status = dto.status;
+      // A disabled UserProfile row alone doesn't stop the person from
+      // logging in -- their Keycloak account has to be disabled too, since
+      // that's what auth actually checks.
+      await this.keycloakAdmin.setUserEnabled(
+        profile.keycloakSub,
+        dto.status === 'active',
+      );
+    }
     await profile.save();
     return profile;
   }
@@ -65,6 +74,7 @@ export class UsersService {
   async remove(id: string): Promise<void> {
     const profile = await this.findOne(id);
     profile.status = 'disabled';
+    await this.keycloakAdmin.setUserEnabled(profile.keycloakSub, false);
     await profile.save();
   }
 }

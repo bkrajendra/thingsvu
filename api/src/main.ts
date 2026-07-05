@@ -17,6 +17,12 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api');
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+  if (config.get<string>('NODE_ENV') === 'production') {
+    // Without this, express-session sees req.secure as false behind a
+    // TLS-terminating reverse proxy (the normal prod topology), so it
+    // silently refuses to set the secure cookie and login breaks.
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  }
   app.use(cookieParser());
   app.use(
     session({

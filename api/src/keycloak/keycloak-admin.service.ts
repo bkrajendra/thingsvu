@@ -316,6 +316,31 @@ export class KeycloakAdminService {
     return { id };
   }
 
+  // Soft-deleting/disabling a tenant user in our own DB (UserProfile.status)
+  // has no effect on their ability to log in unless the Keycloak account
+  // itself is also disabled -- Keycloak rejects authentication for disabled
+  // users regardless of any existing session, so this is what actually
+  // revokes access.
+  async setUserEnabled(userId: string, enabled: boolean): Promise<void> {
+    const res = await this.adminFetch(`/users/${userId}`);
+    if (!res.ok) {
+      throw new Error(
+        `Failed to fetch user ${userId}: ${res.status} ${await res.text()}`,
+      );
+    }
+    const user = (await res.json()) as Record<string, unknown>;
+
+    const updated = await this.adminFetch(`/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...user, enabled }),
+    });
+    if (!updated.ok) {
+      throw new Error(
+        `Failed to set enabled=${enabled} on user ${userId}: ${updated.status} ${await updated.text()}`,
+      );
+    }
+  }
+
   async assignRealmRole(userId: string, roleName: string): Promise<void> {
     const role = await this.ensureRealmRole(roleName);
     const res = await this.adminFetch(`/users/${userId}/role-mappings/realm`, {

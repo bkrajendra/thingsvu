@@ -12,6 +12,7 @@ describe('UsersService', () => {
   const keycloakAdmin = {
     createUser: jest.fn(),
     assignRealmRole: jest.fn(),
+    setUserEnabled: jest.fn(),
   };
 
   beforeAll(async () => {
@@ -76,5 +77,47 @@ describe('UsersService', () => {
     expect(result.profile.keycloakSub).toBe('kc-sub-1');
     expect(typeof result.temporaryPassword).toBe('string');
     expect(result.temporaryPassword.length).toBeGreaterThanOrEqual(12);
+  });
+
+  it('remove() disables the user in Keycloak, not just the local profile row', async () => {
+    keycloakAdmin.createUser.mockResolvedValue({ id: 'kc-sub-2' });
+    keycloakAdmin.assignRealmRole.mockResolvedValue(undefined);
+    keycloakAdmin.setUserEnabled.mockResolvedValue(undefined);
+
+    const profile = await TenantContext.run(
+      { tenantId: 'tenant-1', schemaName: schema, slug: 'demo' },
+      async () => {
+        const created = await service.create({
+          email: 'to-remove@demo.test',
+          role: 'tenant_user',
+        });
+        await service.remove(created.profile.id);
+        return service.findOne(created.profile.id);
+      },
+    );
+
+    expect(keycloakAdmin.setUserEnabled).toHaveBeenCalledWith('kc-sub-2', false);
+    expect(profile.status).toBe('disabled');
+  });
+
+  it('update() re-enables the user in Keycloak when status flips back to active', async () => {
+    keycloakAdmin.createUser.mockResolvedValue({ id: 'kc-sub-3' });
+    keycloakAdmin.assignRealmRole.mockResolvedValue(undefined);
+    keycloakAdmin.setUserEnabled.mockResolvedValue(undefined);
+
+    await TenantContext.run(
+      { tenantId: 'tenant-1', schemaName: schema, slug: 'demo' },
+      async () => {
+        const created = await service.create({
+          email: 're-enable@demo.test',
+          role: 'tenant_user',
+        });
+        await service.update(created.profile.id, { status: 'disabled' });
+        await service.update(created.profile.id, { status: 'active' });
+      },
+    );
+
+    expect(keycloakAdmin.setUserEnabled).toHaveBeenNthCalledWith(1, 'kc-sub-3', false);
+    expect(keycloakAdmin.setUserEnabled).toHaveBeenNthCalledWith(2, 'kc-sub-3', true);
   });
 });

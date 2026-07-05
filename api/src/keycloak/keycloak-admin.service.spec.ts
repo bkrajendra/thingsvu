@@ -51,6 +51,36 @@ describe('KeycloakAdminService', () => {
     expect(profile.attributes.some((a) => a.name === 'tenant_id')).toBe(true);
   });
 
+  it('setUserEnabled disables and re-enables a user without dropping other fields', async () => {
+    const created = await service.createUser({
+      email: 'set-enabled-spec@demo.test',
+      tenantId: 'spec-tenant-id',
+      temporaryPassword: 'SpecPass123!',
+    });
+
+    await service.setUserEnabled(created.id, false);
+    const token = await service.getAdminToken();
+    const disabledRes = await fetch(
+      `${config.adminBaseUrl}/admin/realms/${config.realm}/users/${created.id}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const disabledUser = (await disabledRes.json()) as {
+      enabled: boolean;
+      email: string;
+      attributes?: Record<string, string[]>;
+    };
+    expect(disabledUser.enabled).toBe(false);
+    expect(disabledUser.email).toBe('set-enabled-spec@demo.test');
+
+    await service.setUserEnabled(created.id, true);
+    const enabledRes = await fetch(
+      `${config.adminBaseUrl}/admin/realms/${config.realm}/users/${created.id}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const enabledUser = (await enabledRes.json()) as { enabled: boolean };
+    expect(enabledUser.enabled).toBe(true);
+  });
+
   it('ensureRealmRolesInIdToken enables id.token.claim on the realm-role mapper and is idempotent', async () => {
     await service.ensureRealmRolesInIdToken();
     await expect(service.ensureRealmRolesInIdToken()).resolves.not.toThrow();
