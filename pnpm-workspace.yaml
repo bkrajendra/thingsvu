@@ -4,6 +4,7 @@ packages:
   - "app"
   - "packages/*"
 allowBuilds:
+  '@scarf/scarf': false
   less: true
   nx: true
   unrs-resolver: true

@@ -846,7 +846,7 @@ export class ControlDeviceTokenIndex extends Model {
 ```ts
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SequelizeModule } from '@nestjs/sequelize';
+import { SequelizeModule, getConnectionToken } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize';
 import { ControlTenant } from './models/control/tenant.model';
 import { ControlPlatformAdmin } from './models/control/platform-admin.model';
@@ -870,7 +870,7 @@ import { ControlDeviceTokenIndex } from './models/control/device-token-index.mod
   providers: [
     {
       provide: 'CONTROL_MODELS_REGISTERED',
-      inject: [Sequelize],
+      inject: [getConnectionToken()],
       useFactory: (sequelize: Sequelize) => {
         ControlTenant.initModel(sequelize);
         ControlPlatformAdmin.initModel(sequelize);
@@ -882,6 +882,59 @@ import { ControlDeviceTokenIndex } from './models/control/device-token-index.mod
   exports: [SequelizeModule, 'CONTROL_MODELS_REGISTERED'],
 })
 export class DatabaseModule {}
+
+**Erratum found during Task 3 execution:** the original text above used `inject: [Sequelize]`, which fails at runtime (`@nestjs/sequelize` registers its connection under `getConnectionToken()`, not the bare `Sequelize` class) — `Nest can't resolve dependencies of the CONTROL_MODELS_REGISTERED (?)`. Fixed to `inject: [getConnectionToken()]` above; this is the version to implement.
+
+**Second erratum found during Task 3 execution:** `PgSchemaStorage.ensureTable()` (Step 4) must also `CREATE SCHEMA IF NOT EXISTS "${this.schema}"` before creating the tracking table — Umzug calls `storage.executed()` before running any migration SQL, so for a schema that doesn't exist yet (like `control` on a fresh database), the tracking table's own `CREATE TABLE` fails with `3F000 invalid_schema_name` before the migration that would have created the schema ever runs. The corrected `pg-schema-storage.ts` (already fixed in the repo) is:
+
+```ts
+import type { Sequelize } from 'sequelize';
+import type { UmzugStorage } from 'umzug';
+
+export class PgSchemaStorage implements UmzugStorage {
+  constructor(
+    private readonly sequelize: Sequelize,
+    private readonly schema: string,
+  ) {}
+
+  private get qualifiedTable(): string {
+    return `"${this.schema}"."schema_migrations"`;
+  }
+
+  private async ensureTable(): Promise<void> {
+    await this.sequelize.query(`CREATE SCHEMA IF NOT EXISTS "${this.schema}"`);
+    await this.sequelize.query(
+      `CREATE TABLE IF NOT EXISTS ${this.qualifiedTable} (
+        name text PRIMARY KEY,
+        run_at timestamptz NOT NULL DEFAULT now()
+      )`,
+    );
+  }
+
+  async logMigration({ name }: { name: string }): Promise<void> {
+    await this.ensureTable();
+    await this.sequelize.query(
+      `INSERT INTO ${this.qualifiedTable} (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
+      { bind: [name] },
+    );
+  }
+
+  async unlogMigration({ name }: { name: string }): Promise<void> {
+    await this.ensureTable();
+    await this.sequelize.query(`DELETE FROM ${this.qualifiedTable} WHERE name = $1`, {
+      bind: [name],
+    });
+  }
+
+  async executed(): Promise<string[]> {
+    await this.ensureTable();
+    const [rows] = await this.sequelize.query(
+      `SELECT name FROM ${this.qualifiedTable} ORDER BY run_at ASC`,
+    );
+    return (rows as Array<{ name: string }>).map((r) => r.name);
+  }
+}
+```
 ```
 
 Any provider that uses `ControlTenant` etc. must list `'CONTROL_MODELS_REGISTERED'` in its own module's `imports`/dependency chain (importing `DatabaseModule` is enough, since Nest resolves the factory provider before other providers in modules that import it) so the model is guaranteed initialized before first use.
@@ -3292,3 +3345,2365 @@ git commit -m "feat(api): tenant_admin users CRUD backed by Keycloak + user_prof
 ```
 
 ---
+
+## Task 10: Device profiles + Devices CRUD
+
+**Files:**
+- Create: `api/src/device-profiles/dto/create-device-profile.dto.ts`
+- Create: `api/src/device-profiles/device-profiles.service.ts`
+- Create: `api/src/device-profiles/device-profiles.controller.ts`
+- Create: `api/src/device-profiles/device-profiles.module.ts`
+- Create: `api/src/devices/dto/create-device.dto.ts`
+- Create: `api/src/devices/devices.service.ts`
+- Create: `api/src/devices/devices.controller.ts`
+- Create: `api/src/devices/devices.module.ts`
+- Modify: `api/src/app.module.ts`
+- Test: `api/src/devices/devices.service.spec.ts`
+
+**Interfaces:**
+- Consumes: `DeviceProfile`, `Device` models (Task 4), `TenantContext` (Task 7), `TenantGuard`/`RolesGuard` (Task 7).
+- Produces: `GET/POST /api/v1/device-profiles`, `GET/PATCH/DELETE /api/v1/device-profiles/:id`; `GET/POST /api/v1/devices`, `GET/PATCH/DELETE /api/v1/devices/:id` — all `TenantGuard` + `@Roles('tenant_admin', 'tenant_user')` for reads, `@Roles('tenant_admin')` for writes.
+- Produces: `DevicesService.scopedModel()` pattern reused identically by `DeviceCredentialsService` (Task 11).
+
+- [ ] **Step 1: Write the device-profile DTO and service**
+
+`api/src/device-profiles/dto/create-device-profile.dto.ts`:
+```ts
+import { IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+
+export class CreateDeviceProfileDto {
+  @IsString()
+  @MaxLength(200)
+  name!: string;
+
+  @IsOptional()
+  @IsIn(['mqtt', 'http', 'default'])
+  transport?: 'mqtt' | 'http' | 'default';
+
+  @IsOptional()
+  @IsIn(['access_token', 'mqtt_basic'])
+  provisionType?: 'access_token' | 'mqtt_basic';
+
+  @IsOptional()
+  @IsObject()
+  defaultAttributes?: Record<string, unknown>;
+}
+```
+
+`api/src/device-profiles/device-profiles.service.ts`:
+```ts
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { DeviceProfile } from '../database/models/tenant/device-profile.model';
+import { TenantContext } from '../tenancy/tenant-context';
+import type { CreateDeviceProfileDto } from './dto/create-device-profile.dto';
+
+@Injectable()
+export class DeviceProfilesService {
+  private scopedModel() {
+    return DeviceProfile.schema(TenantContext.getOrThrow().schemaName);
+  }
+
+  create(dto: CreateDeviceProfileDto) {
+    return this.scopedModel().create({
+      name: dto.name,
+      transport: dto.transport ?? 'http',
+      provisionType: dto.provisionType ?? 'access_token',
+      defaultAttributes: dto.defaultAttributes ?? {},
+    });
+  }
+
+  findAll() {
+    return this.scopedModel().findAll({ order: [['createdAt', 'ASC']] });
+  }
+
+  async findOne(id: string): Promise<DeviceProfile> {
+    const profile = await this.scopedModel().findByPk(id);
+    if (!profile) throw new NotFoundException(`Device profile ${id} not found`);
+    return profile as DeviceProfile;
+  }
+
+  async remove(id: string): Promise<void> {
+    const profile = await this.findOne(id);
+    await profile.destroy();
+  }
+}
+```
+
+`api/src/device-profiles/device-profiles.controller.ts`:
+```ts
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Roles } from '../common/roles.decorator';
+import { RolesGuard } from '../common/roles.guard';
+import { TenantGuard } from '../tenancy/tenant.guard';
+import { CreateDeviceProfileDto } from './dto/create-device-profile.dto';
+import { DeviceProfilesService } from './device-profiles.service';
+
+@Controller({ path: 'device-profiles', version: '1' })
+@UseGuards(TenantGuard, RolesGuard)
+export class DeviceProfilesController {
+  constructor(private readonly service: DeviceProfilesService) {}
+
+  @Post()
+  @Roles('tenant_admin')
+  create(@Body() dto: CreateDeviceProfileDto) {
+    return this.service.create(dto);
+  }
+
+  @Get()
+  @Roles('tenant_admin', 'tenant_user')
+  findAll() {
+    return this.service.findAll();
+  }
+
+  @Get(':id')
+  @Roles('tenant_admin', 'tenant_user')
+  findOne(@Param('id') id: string) {
+    return this.service.findOne(id);
+  }
+
+  @Delete(':id')
+  @Roles('tenant_admin')
+  remove(@Param('id') id: string) {
+    return this.service.remove(id);
+  }
+}
+```
+
+`api/src/device-profiles/device-profiles.module.ts`:
+```ts
+import { Module } from '@nestjs/common';
+import { TenancyModule } from '../tenancy/tenancy.module';
+import { DeviceProfilesController } from './device-profiles.controller';
+import { DeviceProfilesService } from './device-profiles.service';
+
+@Module({
+  imports: [TenancyModule],
+  controllers: [DeviceProfilesController],
+  providers: [DeviceProfilesService],
+  exports: [DeviceProfilesService],
+})
+export class DeviceProfilesModule {}
+```
+
+- [ ] **Step 2: Write the failing `DevicesService` test**
+
+`api/src/devices/devices.service.spec.ts`:
+```ts
+import { Test } from '@nestjs/testing';
+import { Sequelize } from 'sequelize';
+import { DevicesService } from './devices.service';
+import { Device } from '../database/models/tenant/device.model';
+import { DeviceProfile } from '../database/models/tenant/device-profile.model';
+import { TenantContext } from '../tenancy/tenant-context';
+
+describe('DevicesService', () => {
+  let sequelize: Sequelize;
+  let service: DevicesService;
+  const schema = 'test_devices_schema';
+
+  beforeAll(async () => {
+    sequelize = new Sequelize(
+      process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/iot_platform',
+      { logging: false },
+    );
+    await sequelize.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    await sequelize.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await sequelize.query(`CREATE SCHEMA "${schema}"`);
+    await sequelize.query(`
+      CREATE TABLE "${schema}".device_profiles (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL,
+        transport text NOT NULL DEFAULT 'http', provision_type text NOT NULL DEFAULT 'access_token',
+        telemetry_keys jsonb NOT NULL DEFAULT '[]', default_attributes jsonb NOT NULL DEFAULT '{}',
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TABLE "${schema}".devices (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL,
+        device_profile_id uuid REFERENCES "${schema}".device_profiles(id),
+        label text, status text NOT NULL DEFAULT 'active', last_seen_at timestamptz, firmware_version text,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    DeviceProfile.initModel(sequelize);
+    Device.initModel(sequelize);
+
+    const moduleRef = await Test.createTestingModule({ providers: [DevicesService] }).compile();
+    service = moduleRef.get(DevicesService);
+  });
+
+  afterAll(async () => {
+    await sequelize.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await sequelize.close();
+  });
+
+  it('creates a device scoped to the current tenant schema', async () => {
+    const device = await TenantContext.run(
+      { tenantId: 't1', schemaName: schema, slug: 'demo' },
+      () => service.create({ name: 'Sensor 1' }),
+    );
+    expect(device.name).toBe('Sensor 1');
+    expect(device.status).toBe('active');
+
+    const found = await TenantContext.run(
+      { tenantId: 't1', schemaName: schema, slug: 'demo' },
+      () => service.findOne(device.id),
+    );
+    expect(found.id).toBe(device.id);
+  });
+});
+```
+
+- [ ] **Step 3: Run it to confirm it fails**
+
+Run: `pnpm --filter api test devices.service`
+Expected: FAIL — `Cannot find module './devices.service'`
+
+- [ ] **Step 4: Implement `devices.service.ts`, controller, module**
+
+`api/src/devices/dto/create-device.dto.ts`:
+```ts
+import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+
+export class CreateDeviceDto {
+  @IsString()
+  @MaxLength(200)
+  name!: string;
+
+  @IsOptional()
+  @IsUUID()
+  deviceProfileId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  label?: string;
+}
+```
+
+`api/src/devices/devices.service.ts`:
+```ts
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Device } from '../database/models/tenant/device.model';
+import { TenantContext } from '../tenancy/tenant-context';
+import type { CreateDeviceDto } from './dto/create-device.dto';
+
+@Injectable()
+export class DevicesService {
+  scopedModel() {
+    return Device.schema(TenantContext.getOrThrow().schemaName);
+  }
+
+  create(dto: CreateDeviceDto) {
+    return this.scopedModel().create({
+      name: dto.name,
+      deviceProfileId: dto.deviceProfileId ?? null,
+      label: dto.label ?? null,
+      status: 'active',
+    });
+  }
+
+  findAll() {
+    return this.scopedModel().findAll({ order: [['createdAt', 'ASC']] });
+  }
+
+  async findOne(id: string): Promise<Device> {
+    const device = await this.scopedModel().findByPk(id);
+    if (!device) throw new NotFoundException(`Device ${id} not found`);
+    return device as Device;
+  }
+
+  async remove(id: string): Promise<void> {
+    const device = await this.findOne(id);
+    await device.destroy();
+  }
+}
+```
+
+`api/src/devices/devices.controller.ts`:
+```ts
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Roles } from '../common/roles.decorator';
+import { RolesGuard } from '../common/roles.guard';
+import { TenantGuard } from '../tenancy/tenant.guard';
+import { CreateDeviceDto } from './dto/create-device.dto';
+import { DevicesService } from './devices.service';
+
+@Controller({ path: 'devices', version: '1' })
+@UseGuards(TenantGuard, RolesGuard)
+export class DevicesController {
+  constructor(private readonly devicesService: DevicesService) {}
+
+  @Post()
+  @Roles('tenant_admin')
+  create(@Body() dto: CreateDeviceDto) {
+    return this.devicesService.create(dto);
+  }
+
+  @Get()
+  @Roles('tenant_admin', 'tenant_user')
+  findAll() {
+    return this.devicesService.findAll();
+  }
+
+  @Get(':id')
+  @Roles('tenant_admin', 'tenant_user')
+  findOne(@Param('id') id: string) {
+    return this.devicesService.findOne(id);
+  }
+
+  @Delete(':id')
+  @Roles('tenant_admin')
+  remove(@Param('id') id: string) {
+    return this.devicesService.remove(id);
+  }
+}
+```
+
+`api/src/devices/devices.module.ts`:
+```ts
+import { Module } from '@nestjs/common';
+import { TenancyModule } from '../tenancy/tenancy.module';
+import { DevicesController } from './devices.controller';
+import { DevicesService } from './devices.service';
+
+@Module({
+  imports: [TenancyModule],
+  controllers: [DevicesController],
+  providers: [DevicesService],
+  exports: [DevicesService],
+})
+export class DevicesModule {}
+```
+
+Add `DeviceProfilesModule` and `DevicesModule` to `AppModule`'s `imports`.
+
+- [ ] **Step 5: Run it to confirm it passes**
+
+Run: `pnpm --filter api test devices.service`
+Expected: PASS (1 test)
+
+- [ ] **Step 6: Run the full backend suite**
+
+Run: `pnpm --filter api test`
+Expected: all PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add api/src/device-profiles api/src/devices api/src/app.module.ts
+git commit -m "feat(api): device profiles and devices CRUD"
+```
+
+---
+
+## Task 11: Device credential issuance (access-token method) + `control.device_token_index`
+
+**Files:**
+- Create: `api/src/common/device-token.util.ts`
+- Create: `api/src/devices/device-credentials.service.ts`
+- Create: `api/src/devices/device-credentials.controller.ts`
+- Modify: `api/src/devices/devices.module.ts`
+- Test: `api/src/common/device-token.util.spec.ts`, `api/src/devices/device-credentials.service.spec.ts`
+
+**Interfaces:**
+- Produces: `hashDeviceToken(token: string, secret: string): string` — reused by `IngestionService`'s `DeviceTokenGuard` (Task 12) to hash an inbound `X-Device-Token` header the same way, for equality comparison against `control.device_token_index.token_hash`.
+- Produces: `DeviceCredentialsService.issueAccessToken(deviceId): Promise<{ token: string; credential: DeviceCredential }>` — `token` is returned **once**, never persisted in plaintext.
+- Produces: `POST /api/v1/devices/:deviceId/credentials` (issue/rotate, `tenant_admin`), `GET /api/v1/devices/:deviceId/credentials` (metadata only, `tenant_admin`).
+- Consumes: `DevicesService.findOne` (Task 10, to 404 on an unknown device before issuing), `ControlDeviceTokenIndex` (Task 3), `DeviceCredential` model (Task 4).
+
+- [ ] **Step 1: Write the failing hashing test**
+
+`api/src/common/device-token.util.spec.ts`:
+```ts
+import { hashDeviceToken } from './device-token.util';
+
+describe('hashDeviceToken', () => {
+  it('is deterministic for the same token and secret', () => {
+    const a = hashDeviceToken('abc123', 'pepper');
+    const b = hashDeviceToken('abc123', 'pepper');
+    expect(a).toBe(b);
+  });
+
+  it('produces a different hash for a different secret', () => {
+    const a = hashDeviceToken('abc123', 'pepper-1');
+    const b = hashDeviceToken('abc123', 'pepper-2');
+    expect(a).not.toBe(b);
+  });
+
+  it('never returns the plaintext token', () => {
+    const hash = hashDeviceToken('abc123', 'pepper');
+    expect(hash).not.toContain('abc123');
+    expect(hash).toHaveLength(64); // hex-encoded sha256
+  });
+});
+```
+
+- [ ] **Step 2: Run it to confirm it fails, then implement**
+
+Run: `pnpm --filter api test device-token.util` → FAIL (module not found).
+
+`api/src/common/device-token.util.ts`:
+```ts
+import { createHmac } from 'node:crypto';
+
+export function hashDeviceToken(token: string, secret: string): string {
+  return createHmac('sha256', secret).update(token).digest('hex');
+}
+```
+
+Run: `pnpm --filter api test device-token.util` → PASS (3 tests)
+
+- [ ] **Step 3: Write the failing `DeviceCredentialsService` test**
+
+`api/src/devices/device-credentials.service.spec.ts`:
+```ts
+import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { getConnectionToken } from '@nestjs/sequelize';
+import { Sequelize } from 'sequelize';
+import { DeviceCredentialsService } from './device-credentials.service';
+import { DevicesService } from './devices.service';
+import { Device } from '../database/models/tenant/device.model';
+import { DeviceCredential } from '../database/models/tenant/device-credential.model';
+import { ControlDeviceTokenIndex } from '../database/models/control/device-token-index.model';
+import { ControlTenant } from '../database/models/control/tenant.model';
+import { TenantContext } from '../tenancy/tenant-context';
+import { hashDeviceToken } from '../common/device-token.util';
+
+describe('DeviceCredentialsService', () => {
+  let sequelize: Sequelize;
+  let service: DeviceCredentialsService;
+  const schema = 'test_credentials_schema';
+  const secret = 'test-pepper';
+  let tenantId: string;
+  let deviceId: string;
+
+  beforeAll(async () => {
+    sequelize = new Sequelize(
+      process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/iot_platform',
+      { logging: false },
+    );
+    await sequelize.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    await sequelize.query('CREATE SCHEMA IF NOT EXISTS control');
+    await sequelize.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await sequelize.query(`CREATE SCHEMA "${schema}"`);
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS control.tenants (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug text UNIQUE NOT NULL, name text NOT NULL,
+        schema_name text UNIQUE NOT NULL, status text NOT NULL DEFAULT 'active', keycloak_group_id text,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS control.device_token_index (
+        token_hash text PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES control.tenants(id),
+        device_id uuid NOT NULL, credential_type text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TABLE "${schema}".devices (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, device_profile_id uuid,
+        label text, status text NOT NULL DEFAULT 'active', last_seen_at timestamptz, firmware_version text,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TABLE "${schema}".device_credentials (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), device_id uuid UNIQUE NOT NULL REFERENCES "${schema}".devices(id),
+        credential_type text NOT NULL, token_hash text UNIQUE, mqtt_username text, mqtt_password_hash text,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    ControlTenant.initModel(sequelize);
+    ControlDeviceTokenIndex.initModel(sequelize);
+    Device.initModel(sequelize);
+    DeviceCredential.initModel(sequelize);
+
+    const tenant = await ControlTenant.create({ slug: 'credtest', name: 'Cred Test', schemaName: schema, status: 'active' });
+    tenantId = tenant.id;
+    const device = await Device.schema(schema).create({ name: 'Sensor', status: 'active' });
+    deviceId = device.id;
+
+    const config = { get: (key: string) => (key === 'DEVICE_TOKEN_HASH_SECRET' ? secret : undefined) } as unknown as ConfigService;
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        DeviceCredentialsService,
+        { provide: DevicesService, useValue: { findOne: jest.fn().mockResolvedValue({ id: deviceId }) } },
+        { provide: ConfigService, useValue: config },
+        { provide: getConnectionToken(), useValue: sequelize },
+      ],
+    }).compile();
+    service = moduleRef.get(DeviceCredentialsService);
+  });
+
+  afterAll(async () => {
+    await sequelize.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await sequelize.query('DROP SCHEMA IF EXISTS control CASCADE');
+    await sequelize.close();
+  });
+
+  it('issues a token, stores only its hash, and indexes it in control.device_token_index', async () => {
+    const { token, credential } = await TenantContext.run(
+      { tenantId, schemaName: schema, slug: 'credtest' },
+      () => service.issueAccessToken(deviceId),
+    );
+
+    expect(credential.get('tokenHash')).toBe(hashDeviceToken(token, secret));
+    expect(credential.get('tokenHash')).not.toBe(token);
+
+    const indexRow = await ControlDeviceTokenIndex.findByPk(hashDeviceToken(token, secret));
+    expect(indexRow?.get('deviceId')).toBe(deviceId);
+    expect(indexRow?.get('tenantId')).toBe(tenantId);
+  });
+
+  it('rotating the token removes the old index entry', async () => {
+    const first = await TenantContext.run(
+      { tenantId, schemaName: schema, slug: 'credtest' },
+      () => service.issueAccessToken(deviceId),
+    );
+    const second = await TenantContext.run(
+      { tenantId, schemaName: schema, slug: 'credtest' },
+      () => service.issueAccessToken(deviceId),
+    );
+
+    const oldIndexRow = await ControlDeviceTokenIndex.findByPk(hashDeviceToken(first.token, secret));
+    const newIndexRow = await ControlDeviceTokenIndex.findByPk(hashDeviceToken(second.token, secret));
+    expect(oldIndexRow).toBeNull();
+    expect(newIndexRow?.get('deviceId')).toBe(deviceId);
+  });
+});
+```
+
+- [ ] **Step 4: Run it to confirm it fails**
+
+Run: `pnpm --filter api test device-credentials.service`
+Expected: FAIL — `Cannot find module './device-credentials.service'`
+
+- [ ] **Step 5: Implement `DeviceCredentialsService`**
+
+```ts
+import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { getConnectionToken } from '@nestjs/sequelize';
+import { randomBytes } from 'node:crypto';
+import { Sequelize } from 'sequelize';
+import { hashDeviceToken } from '../common/device-token.util';
+import { DeviceCredential } from '../database/models/tenant/device-credential.model';
+import { ControlDeviceTokenIndex } from '../database/models/control/device-token-index.model';
+import { TenantContext } from '../tenancy/tenant-context';
+import { DevicesService } from './devices.service';
+
+@Injectable()
+export class DeviceCredentialsService {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly devicesService: DevicesService,
+    @Inject(getConnectionToken()) private readonly sequelize: Sequelize,
+  ) {}
+
+  async issueAccessToken(deviceId: string): Promise<{ token: string; credential: DeviceCredential }> {
+    const { tenantId, schemaName } = TenantContext.getOrThrow();
+    await this.devicesService.findOne(deviceId);
+
+    const token = randomBytes(24).toString('base64url');
+    const tokenHash = hashDeviceToken(token, this.config.get<string>('DEVICE_TOKEN_HASH_SECRET')!);
+    const ScopedCredential = DeviceCredential.schema(schemaName);
+
+    const credential = await this.sequelize.transaction(async (transaction) => {
+      const existing = await ScopedCredential.findOne({ where: { deviceId }, transaction });
+      if (existing) {
+        await ControlDeviceTokenIndex.destroy({
+          where: { tokenHash: existing.get('tokenHash') as string },
+          transaction,
+        });
+        await existing.destroy({ transaction });
+      }
+
+      const created = await ScopedCredential.create(
+        { deviceId, credentialType: 'access_token', tokenHash },
+        { transaction },
+      );
+      await ControlDeviceTokenIndex.create(
+        { tokenHash, tenantId, deviceId, credentialType: 'access_token' },
+        { transaction },
+      );
+      return created;
+    });
+
+    return { token, credential: credential as DeviceCredential };
+  }
+
+  async getMetadata(deviceId: string): Promise<{ credentialType: string; createdAt: Date } | null> {
+    const { schemaName } = TenantContext.getOrThrow();
+    const credential = await DeviceCredential.schema(schemaName).findOne({ where: { deviceId } });
+    if (!credential) return null;
+    return {
+      credentialType: credential.get('credentialType') as string,
+      createdAt: credential.get('createdAt') as Date,
+    };
+  }
+}
+```
+
+- [ ] **Step 6: Run it to confirm it passes**
+
+Run: `pnpm --filter api test device-credentials.service`
+Expected: PASS (2 tests)
+
+- [ ] **Step 7: Write `DeviceCredentialsController` and wire into `DevicesModule`**
+
+`api/src/devices/device-credentials.controller.ts`:
+```ts
+import { Controller, Get, NotFoundException, Param, Post, UseGuards } from '@nestjs/common';
+import { Roles } from '../common/roles.decorator';
+import { RolesGuard } from '../common/roles.guard';
+import { TenantGuard } from '../tenancy/tenant.guard';
+import { DeviceCredentialsService } from './device-credentials.service';
+
+@Controller({ path: 'devices/:deviceId/credentials', version: '1' })
+@UseGuards(TenantGuard, RolesGuard)
+@Roles('tenant_admin')
+export class DeviceCredentialsController {
+  constructor(private readonly service: DeviceCredentialsService) {}
+
+  @Post()
+  issue(@Param('deviceId') deviceId: string) {
+    return this.service.issueAccessToken(deviceId);
+  }
+
+  @Get()
+  async metadata(@Param('deviceId') deviceId: string) {
+    const meta = await this.service.getMetadata(deviceId);
+    if (!meta) throw new NotFoundException('No credential issued for this device yet');
+    return meta;
+  }
+}
+```
+
+Update `api/src/devices/devices.module.ts` to add the new controller and service:
+```ts
+import { Module } from '@nestjs/common';
+import { TenancyModule } from '../tenancy/tenancy.module';
+import { DevicesController } from './devices.controller';
+import { DevicesService } from './devices.service';
+import { DeviceCredentialsController } from './device-credentials.controller';
+import { DeviceCredentialsService } from './device-credentials.service';
+
+@Module({
+  imports: [TenancyModule],
+  controllers: [DevicesController, DeviceCredentialsController],
+  providers: [DevicesService, DeviceCredentialsService],
+  exports: [DevicesService],
+})
+export class DevicesModule {}
+```
+
+- [ ] **Step 8: Run the full backend suite**
+
+Run: `pnpm --filter api test`
+Expected: all PASS.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add api/src/common/device-token.util.ts api/src/common/device-token.util.spec.ts api/src/devices
+git commit -m "feat(api): access-token credential issuance with control-plane token index"
+```
+
+---
+
+## Task 12: Device-facing HTTP telemetry ingestion
+
+**Scope note:** only `POST /api/v1/device/telemetry` is built now (design.md §17's Phase 1.1 acceptance test only requires telemetry ingestion). `POST /api/v1/device/attributes` is deferred alongside the attributes UI (Deviation #5).
+
+**Files:**
+- Create: `api/src/ingestion/dto/telemetry-payload.dto.ts`
+- Create: `api/src/ingestion/device-token.guard.ts`
+- Create: `api/src/ingestion/ingestion.service.ts`
+- Create: `api/src/ingestion/ingestion.controller.ts`
+- Create: `api/src/ingestion/ingestion.module.ts`
+- Modify: `api/src/app.module.ts`
+- Test: `api/src/ingestion/device-token.guard.spec.ts`, `api/src/ingestion/ingestion.service.spec.ts`
+
+**Interfaces:**
+- Consumes: `hashDeviceToken` (Task 11), `ControlDeviceTokenIndex`/`ControlTenant` models (Task 3).
+- Produces: `DeviceAuthContext = { tenantId, deviceId, schemaName }`, attached to `req.deviceAuth` by `DeviceTokenGuard` — this is **not** the subdomain-based `TenantContext` from Task 7; device-facing endpoints resolve their tenant purely from the token (a device doesn't know its tenant's subdomain), so this controller does not use `TenantGuard`/`TenantResolutionMiddleware` at all.
+- Produces: `POST /api/v1/device/telemetry` (204 No Content on success), writes to `"{schema}".telemetry` + upserts `"{schema}".telemetry_latest` + updates `devices.last_seen_at`. Reused by Task 13's telemetry query endpoints only in the sense that they read the same tables (no shared code).
+
+- [ ] **Step 1: Write the DTO**
+
+`api/src/ingestion/dto/telemetry-payload.dto.ts`:
+```ts
+import { IsNumber, IsObject, IsOptional } from 'class-validator';
+
+export class TelemetryPayloadDto {
+  @IsOptional()
+  @IsNumber()
+  ts?: number;
+
+  @IsObject()
+  values!: Record<string, number | string | boolean | Record<string, unknown>>;
+}
+```
+
+- [ ] **Step 2: Write the failing `DeviceTokenGuard` test**
+
+`api/src/ingestion/device-token.guard.spec.ts`:
+```ts
+import { UnauthorizedException, type ExecutionContext } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Sequelize } from 'sequelize';
+import { DeviceTokenGuard } from './device-token.guard';
+import { ControlTenant } from '../database/models/control/tenant.model';
+import { ControlDeviceTokenIndex } from '../database/models/control/device-token-index.model';
+import { hashDeviceToken } from '../common/device-token.util';
+
+function contextWithToken(token?: string): ExecutionContext {
+  const req: any = { headers: token ? { 'x-device-token': token } : {} };
+  return { switchToHttp: () => ({ getRequest: () => req }) } as unknown as ExecutionContext;
+}
+
+describe('DeviceTokenGuard', () => {
+  let sequelize: Sequelize;
+  const secret = 'guard-test-secret';
+  const config = { get: () => secret } as unknown as ConfigService;
+  const guard = new DeviceTokenGuard(config);
+  let tenantId: string;
+  let deviceId: string;
+  let validToken: string;
+
+  beforeAll(async () => {
+    sequelize = new Sequelize(
+      process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/iot_platform',
+      { logging: false },
+    );
+    await sequelize.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    await sequelize.query('CREATE SCHEMA IF NOT EXISTS control');
+    await sequelize.query(`
+      CREATE TABLE IF NOT EXISTS control.tenants (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug text UNIQUE NOT NULL, name text NOT NULL,
+        schema_name text UNIQUE NOT NULL, status text NOT NULL DEFAULT 'active', keycloak_group_id text,
+        created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS control.device_token_index (
+        token_hash text PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES control.tenants(id),
+        device_id uuid NOT NULL, credential_type text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+      );
+    `);
+    ControlTenant.initModel(sequelize);
+    ControlDeviceTokenIndex.initModel(sequelize);
+
+    const tenant = await ControlTenant.create({ slug: 'guardtest', name: 'Guard Test', schemaName: 'tenant_guardtest', status: 'active' });
+    tenantId = tenant.id;
+    deviceId = '11111111-1111-1111-1111-111111111111';
+    validToken = 'plaintext-device-token';
+    await ControlDeviceTokenIndex.create({
+      tokenHash: hashDeviceToken(validToken, secret),
+      tenantId,
+      deviceId,
+      credentialType: 'access_token',
+    });
+  });
+
+  afterAll(async () => {
+    await sequelize.query('DROP SCHEMA IF EXISTS control CASCADE');
+    await sequelize.close();
+  });
+
+  it('rejects a request with no token header', async () => {
+    await expect(guard.canActivate(contextWithToken())).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('rejects an unknown token', async () => {
+    await expect(guard.canActivate(contextWithToken('not-a-real-token'))).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('accepts a valid token and attaches deviceAuth to the request', async () => {
+    const ctx = contextWithToken(validToken);
+    const req = (ctx.switchToHttp().getRequest as () => any)();
+    const allowed = await guard.canActivate(ctx);
+    expect(allowed).toBe(true);
+    expect(req.deviceAuth).toEqual({ tenantId, deviceId, schemaName: 'tenant_guardtest' });
+  });
+});
+```
+
+- [ ] **Step 3: Run it to confirm it fails**
+
+Run: `pnpm --filter api test device-token.guard`
+Expected: FAIL — `Cannot find module './device-token.guard'`
+
+- [ ] **Step 4: Implement `DeviceTokenGuard`**
+
+```ts
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
+import { hashDeviceToken } from '../common/device-token.util';
+import { ControlDeviceTokenIndex } from '../database/models/control/device-token-index.model';
+import { ControlTenant } from '../database/models/control/tenant.model';
+
+export interface DeviceAuthContext {
+  tenantId: string;
+  deviceId: string;
+  schemaName: string;
+}
+
+@Injectable()
+export class DeviceTokenGuard implements CanActivate {
+  constructor(private readonly config: ConfigService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const req = context.switchToHttp().getRequest<Request & { deviceAuth?: DeviceAuthContext }>();
+    const token = req.headers['x-device-token'];
+    if (!token || Array.isArray(token)) {
+      throw new UnauthorizedException('Missing X-Device-Token header');
+    }
+
+    const tokenHash = hashDeviceToken(token, this.config.get<string>('DEVICE_TOKEN_HASH_SECRET')!);
+    const indexRow = await ControlDeviceTokenIndex.findByPk(tokenHash);
+    if (!indexRow) {
+      throw new UnauthorizedException('Invalid device token');
+    }
+
+    const tenant = await ControlTenant.findByPk(indexRow.get('tenantId') as string);
+    if (!tenant || tenant.status !== 'active') {
+      throw new UnauthorizedException('Tenant is not active');
+    }
+
+    req.deviceAuth = {
+      tenantId: tenant.id,
+      deviceId: indexRow.get('deviceId') as string,
+      schemaName: tenant.schemaName,
+    };
+    return true;
+  }
+}
+```
+
+- [ ] **Step 5: Run it to confirm it passes**
+
+Run: `pnpm --filter api test device-token.guard`
+Expected: PASS (3 tests)
+
+- [ ] **Step 6: Write the failing `IngestionService` test**
+
+`api/src/ingestion/ingestion.service.spec.ts`:
+```ts
+import { Test } from '@nestjs/testing';
+import { getConnectionToken } from '@nestjs/sequelize';
+import { Sequelize } from 'sequelize';
+import { IngestionService } from './ingestion.service';
+
+describe('IngestionService', () => {
+  let sequelize: Sequelize;
+  let service: IngestionService;
+  const schema = 'test_ingestion_schema';
+  const deviceId = '22222222-2222-2222-2222-222222222222';
+
+  beforeAll(async () => {
+    sequelize = new Sequelize(
+      process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/iot_platform',
+      { logging: false },
+    );
+    await sequelize.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    await sequelize.query('CREATE EXTENSION IF NOT EXISTS timescaledb');
+    await sequelize.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await sequelize.query(`CREATE SCHEMA "${schema}"`);
+    await sequelize.query(`
+      CREATE TABLE "${schema}".devices (
+        id uuid PRIMARY KEY, name text NOT NULL, status text NOT NULL DEFAULT 'active',
+        last_seen_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      INSERT INTO "${schema}".devices (id, name) VALUES ('${deviceId}', 'Sensor');
+      CREATE TABLE "${schema}".telemetry (
+        device_id uuid NOT NULL, ts timestamptz NOT NULL, key text NOT NULL,
+        value_num double precision, value_str text, value_bool boolean, value_json jsonb
+      );
+      SELECT create_hypertable('"${schema}".telemetry', 'ts', if_not_exists => TRUE);
+      CREATE TABLE "${schema}".telemetry_latest (
+        device_id uuid NOT NULL, key text NOT NULL, ts timestamptz NOT NULL,
+        value_num double precision, value_str text, value_bool boolean, value_json jsonb,
+        PRIMARY KEY (device_id, key)
+      );
+    `);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [IngestionService, { provide: getConnectionToken(), useValue: sequelize }],
+    }).compile();
+    service = moduleRef.get(IngestionService);
+  });
+
+  afterAll(async () => {
+    await sequelize.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await sequelize.close();
+  });
+
+  it('writes a telemetry row, upserts telemetry_latest, and updates last_seen_at', async () => {
+    await service.ingest(
+      { tenantId: 't1', deviceId, schemaName: schema },
+      { ts: 1735689600000, values: { temp: 22.5, online: true, label: 'ok' } },
+    );
+
+    const [tempRows] = await sequelize.query(`SELECT value_num FROM "${schema}".telemetry WHERE key = 'temp'`);
+    expect((tempRows as any[])[0].value_num).toBe(22.5);
+
+    const [latestRows] = await sequelize.query(
+      `SELECT key, value_num, value_bool, value_str FROM "${schema}".telemetry_latest ORDER BY key`,
+    );
+    expect(latestRows).toHaveLength(3);
+
+    const [deviceRows] = await sequelize.query(`SELECT last_seen_at FROM "${schema}".devices WHERE id = '${deviceId}'`);
+    expect((deviceRows as any[])[0].last_seen_at).not.toBeNull();
+  });
+
+  it('does not regress telemetry_latest when an older-timestamped point arrives late', async () => {
+    await service.ingest({ tenantId: 't1', deviceId, schemaName: schema }, { ts: 1735689500000, values: { temp: 99 } });
+    const [rows] = await sequelize.query(`SELECT value_num FROM "${schema}".telemetry_latest WHERE key = 'temp'`);
+    expect((rows as any[])[0].value_num).toBe(22.5); // unchanged — the late point is older than what's already latest
+  });
+});
+```
+
+- [ ] **Step 7: Run it to confirm it fails**
+
+Run: `pnpm --filter api test ingestion.service`
+Expected: FAIL — `Cannot find module './ingestion.service'`
+
+- [ ] **Step 8: Implement `IngestionService`**
+
+```ts
+import { Inject, Injectable } from '@nestjs/common';
+import { getConnectionToken } from '@nestjs/sequelize';
+import { Sequelize } from 'sequelize';
+import type { DeviceAuthContext } from './device-token.guard';
+import type { TelemetryPayloadDto } from './dto/telemetry-payload.dto';
+
+interface TelemetryRow {
+  deviceId: string;
+  ts: Date;
+  key: string;
+  valueNum: number | null;
+  valueStr: string | null;
+  valueBool: boolean | null;
+  valueJson: unknown;
+}
+
+@Injectable()
+export class IngestionService {
+  constructor(@Inject(getConnectionToken()) private readonly sequelize: Sequelize) {}
+
+  async ingest(deviceAuth: DeviceAuthContext, payload: TelemetryPayloadDto): Promise<void> {
+    const ts = payload.ts ? new Date(payload.ts) : new Date();
+    const schema = deviceAuth.schemaName;
+    const rows = Object.entries(payload.values).map(([key, value]) =>
+      this.toRow(deviceAuth.deviceId, ts, key, value),
+    );
+
+    await this.sequelize.transaction(async (transaction) => {
+      for (const row of rows) {
+        await this.sequelize.query(
+          `INSERT INTO "${schema}".telemetry (device_id, ts, key, value_num, value_str, value_bool, value_json)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          { bind: [row.deviceId, row.ts, row.key, row.valueNum, row.valueStr, row.valueBool, row.valueJson], transaction },
+        );
+        await this.sequelize.query(
+          `INSERT INTO "${schema}".telemetry_latest (device_id, key, ts, value_num, value_str, value_bool, value_json)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (device_id, key) DO UPDATE SET
+             ts = EXCLUDED.ts, value_num = EXCLUDED.value_num, value_str = EXCLUDED.value_str,
+             value_bool = EXCLUDED.value_bool, value_json = EXCLUDED.value_json
+           WHERE "${schema}".telemetry_latest.ts <= EXCLUDED.ts`,
+          { bind: [row.deviceId, row.key, row.ts, row.valueNum, row.valueStr, row.valueBool, row.valueJson], transaction },
+        );
+      }
+      await this.sequelize.query(`UPDATE "${schema}".devices SET last_seen_at = $1 WHERE id = $2`, {
+        bind: [ts, deviceAuth.deviceId],
+        transaction,
+      });
+    });
+  }
+
+  private toRow(deviceId: string, ts: Date, key: string, value: unknown): TelemetryRow {
+    const base: TelemetryRow = { deviceId, ts, key, valueNum: null, valueStr: null, valueBool: null, valueJson: null };
+    if (typeof value === 'number') return { ...base, valueNum: value };
+    if (typeof value === 'boolean') return { ...base, valueBool: value };
+    if (typeof value === 'string') return { ...base, valueStr: value };
+    return { ...base, valueJson: value };
+  }
+}
+```
+
+- [ ] **Step 9: Run it to confirm it passes**
+
+Run: `pnpm --filter api test ingestion.service`
+Expected: PASS (2 tests)
+
+- [ ] **Step 10: Write `IngestionController` and `IngestionModule`**
+
+`api/src/ingestion/ingestion.controller.ts`:
+```ts
+import { Body, Controller, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
+import { DeviceTokenGuard, type DeviceAuthContext } from './device-token.guard';
+import { TelemetryPayloadDto } from './dto/telemetry-payload.dto';
+import { IngestionService } from './ingestion.service';
+
+@Controller({ path: 'device', version: '1' })
+@UseGuards(DeviceTokenGuard)
+export class IngestionController {
+  constructor(private readonly ingestionService: IngestionService) {}
+
+  @Post('telemetry')
+  @HttpCode(204)
+  async telemetry(@Req() req: Request & { deviceAuth?: DeviceAuthContext }, @Body() dto: TelemetryPayloadDto): Promise<void> {
+    await this.ingestionService.ingest(req.deviceAuth!, dto);
+  }
+}
+```
+
+`api/src/ingestion/ingestion.module.ts`:
+```ts
+import { Module } from '@nestjs/common';
+import { DatabaseModule } from '../database/database.module';
+import { IngestionController } from './ingestion.controller';
+import { IngestionService } from './ingestion.service';
+import { DeviceTokenGuard } from './device-token.guard';
+
+@Module({
+  imports: [DatabaseModule],
+  controllers: [IngestionController],
+  providers: [IngestionService, DeviceTokenGuard],
+})
+export class IngestionModule {}
+```
+
+Add `IngestionModule` to `AppModule`'s `imports`.
+
+- [ ] **Step 11: Run the full backend suite**
+
+Run: `pnpm --filter api test`
+Expected: all PASS.
+
+- [ ] **Step 12: Commit**
+
+```bash
+git add api/src/ingestion api/src/app.module.ts
+git commit -m "feat(api): HTTP device telemetry ingestion with token auth"
+```
+
+---
+
+## Task 13: Telemetry query API (latest values + series) for the UI
+
+**Files:**
+- Create: `api/src/telemetry/telemetry.repository.ts`
+- Create: `api/src/telemetry/telemetry.controller.ts`
+- Create: `api/src/telemetry/telemetry.module.ts`
+- Modify: `api/src/app.module.ts`
+- Test: `api/src/telemetry/telemetry.repository.spec.ts`
+
+**Interfaces:**
+- Produces: `TelemetryRepository.latest(schema, deviceIds, keys?): Promise<LatestPoint[]>`, `.series(schema, { deviceId, key, from, to }): Promise<SeriesPoint[]>` — raw schema-qualified SQL, per design.md §12 ("telemetry uses raw Timescale SQL").
+- Produces: `GET /api/v1/telemetry/latest?deviceIds=<csv>&keys=<csv>`, `GET /api/v1/telemetry/series?deviceId=&key=&from=&to=` (ISO 8601 timestamps; defaults to the last 24h). Both `TenantGuard` + `@Roles('tenant_admin','tenant_user')`. Reused directly by the Angular telemetry view (Task 17).
+
+- [ ] **Step 1: Write the failing repository test**
+
+`api/src/telemetry/telemetry.repository.spec.ts`:
+```ts
+import { Test } from '@nestjs/testing';
+import { getConnectionToken } from '@nestjs/sequelize';
+import { Sequelize } from 'sequelize';
+import { TelemetryRepository } from './telemetry.repository';
+
+describe('TelemetryRepository', () => {
+  let sequelize: Sequelize;
+  let repo: TelemetryRepository;
+  const schema = 'test_telemetry_repo_schema';
+  const deviceId = '33333333-3333-3333-3333-333333333333';
+
+  beforeAll(async () => {
+    sequelize = new Sequelize(
+      process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/iot_platform',
+      { logging: false },
+    );
+    await sequelize.query('CREATE EXTENSION IF NOT EXISTS timescaledb');
+    await sequelize.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await sequelize.query(`CREATE SCHEMA "${schema}"`);
+    await sequelize.query(`
+      CREATE TABLE "${schema}".telemetry (
+        device_id uuid NOT NULL, ts timestamptz NOT NULL, key text NOT NULL,
+        value_num double precision, value_str text, value_bool boolean, value_json jsonb
+      );
+      SELECT create_hypertable('"${schema}".telemetry', 'ts', if_not_exists => TRUE);
+      CREATE TABLE "${schema}".telemetry_latest (
+        device_id uuid NOT NULL, key text NOT NULL, ts timestamptz NOT NULL,
+        value_num double precision, value_str text, value_bool boolean, value_json jsonb,
+        PRIMARY KEY (device_id, key)
+      );
+      INSERT INTO "${schema}".telemetry_latest (device_id, key, ts, value_num) VALUES
+        ('${deviceId}', 'temp', now(), 21.0), ('${deviceId}', 'humidity', now(), 55.0);
+      INSERT INTO "${schema}".telemetry (device_id, ts, key, value_num) VALUES
+        ('${deviceId}', now() - interval '2 hours', 'temp', 20.0),
+        ('${deviceId}', now() - interval '1 hour', 'temp', 20.5),
+        ('${deviceId}', now(), 'temp', 21.0);
+    `);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [TelemetryRepository, { provide: getConnectionToken(), useValue: sequelize }],
+    }).compile();
+    repo = moduleRef.get(TelemetryRepository);
+  });
+
+  afterAll(async () => {
+    await sequelize.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+    await sequelize.close();
+  });
+
+  it('returns latest values filtered by device and key', async () => {
+    const rows = await repo.latest(schema, [deviceId], ['temp']);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].key).toBe('temp');
+    expect(Number(rows[0].value_num)).toBe(21.0);
+  });
+
+  it('returns all keys for a device when no key filter is given', async () => {
+    const rows = await repo.latest(schema, [deviceId]);
+    expect(rows.map((r) => r.key).sort()).toEqual(['humidity', 'temp']);
+  });
+
+  it('returns an ascending time series within the requested window', async () => {
+    const rows = await repo.series(schema, {
+      deviceId,
+      key: 'temp',
+      from: new Date(Date.now() - 3 * 3600 * 1000),
+      to: new Date(),
+    });
+    expect(rows).toHaveLength(3);
+    expect(Number(rows[0].value_num)).toBe(20.0);
+    expect(Number(rows[2].value_num)).toBe(21.0);
+  });
+});
+```
+
+- [ ] **Step 2: Run it to confirm it fails**
+
+Run: `pnpm --filter api test telemetry.repository`
+Expected: FAIL — `Cannot find module './telemetry.repository'`
+
+- [ ] **Step 3: Implement `TelemetryRepository`**
+
+```ts
+import { Inject, Injectable } from '@nestjs/common';
+import { getConnectionToken } from '@nestjs/sequelize';
+import { Sequelize } from 'sequelize';
+
+export interface TelemetryPoint {
+  device_id: string;
+  key: string;
+  ts: Date;
+  value_num: number | null;
+  value_str: string | null;
+  value_bool: boolean | null;
+  value_json: unknown;
+}
+
+@Injectable()
+export class TelemetryRepository {
+  constructor(@Inject(getConnectionToken()) private readonly sequelize: Sequelize) {}
+
+  async latest(schema: string, deviceIds: string[], keys?: string[]): Promise<TelemetryPoint[]> {
+    const conditions = ['device_id = ANY($1)'];
+    const bind: unknown[] = [deviceIds];
+    if (keys && keys.length > 0) {
+      conditions.push('key = ANY($2)');
+      bind.push(keys);
+    }
+    const [rows] = await this.sequelize.query(
+      `SELECT device_id, key, ts, value_num, value_str, value_bool, value_json
+       FROM "${schema}".telemetry_latest
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY device_id, key`,
+      { bind },
+    );
+    return rows as TelemetryPoint[];
+  }
+
+  async series(
+    schema: string,
+    params: { deviceId: string; key: string; from: Date; to: Date },
+  ): Promise<TelemetryPoint[]> {
+    const [rows] = await this.sequelize.query(
+      `SELECT device_id, key, ts, value_num, value_str, value_bool, value_json
+       FROM "${schema}".telemetry
+       WHERE device_id = $1 AND key = $2 AND ts BETWEEN $3 AND $4
+       ORDER BY ts ASC
+       LIMIT 1000`,
+      { bind: [params.deviceId, params.key, params.from, params.to] },
+    );
+    return rows as TelemetryPoint[];
+  }
+}
+```
+
+- [ ] **Step 4: Run it to confirm it passes**
+
+Run: `pnpm --filter api test telemetry.repository`
+Expected: PASS (3 tests)
+
+- [ ] **Step 5: Write `TelemetryController` and `TelemetryModule`**
+
+`api/src/telemetry/telemetry.controller.ts`:
+```ts
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Roles } from '../common/roles.decorator';
+import { RolesGuard } from '../common/roles.guard';
+import { TenantGuard } from '../tenancy/tenant.guard';
+import { TenantContext } from '../tenancy/tenant-context';
+import { TelemetryRepository } from './telemetry.repository';
+
+@Controller({ path: 'telemetry', version: '1' })
+@UseGuards(TenantGuard, RolesGuard)
+@Roles('tenant_admin', 'tenant_user')
+export class TelemetryController {
+  constructor(private readonly repository: TelemetryRepository) {}
+
+  @Get('latest')
+  latest(@Query('deviceIds') deviceIds: string, @Query('keys') keys?: string) {
+    const { schemaName } = TenantContext.getOrThrow();
+    const deviceIdList = deviceIds.split(',').filter(Boolean);
+    const keyList = keys ? keys.split(',').filter(Boolean) : undefined;
+    return this.repository.latest(schemaName, deviceIdList, keyList);
+  }
+
+  @Get('series')
+  series(
+    @Query('deviceId') deviceId: string,
+    @Query('key') key: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const { schemaName } = TenantContext.getOrThrow();
+    return this.repository.series(schemaName, {
+      deviceId,
+      key,
+      from: from ? new Date(from) : new Date(Date.now() - 24 * 3600 * 1000),
+      to: to ? new Date(to) : new Date(),
+    });
+  }
+}
+```
+
+`api/src/telemetry/telemetry.module.ts`:
+```ts
+import { Module } from '@nestjs/common';
+import { DatabaseModule } from '../database/database.module';
+import { TenancyModule } from '../tenancy/tenancy.module';
+import { TelemetryController } from './telemetry.controller';
+import { TelemetryRepository } from './telemetry.repository';
+
+@Module({
+  imports: [DatabaseModule, TenancyModule],
+  controllers: [TelemetryController],
+  providers: [TelemetryRepository],
+})
+export class TelemetryModule {}
+```
+
+Add `TelemetryModule` to `AppModule`'s `imports`.
+
+- [ ] **Step 6: Run the full backend suite**
+
+Run: `pnpm --filter api test`
+Expected: all PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add api/src/telemetry api/src/app.module.ts
+git commit -m "feat(api): telemetry latest-values and series query endpoints"
+```
+
+---
+
+## Task 14: Demo seed script (tenant + tenant_admin + device + token)
+
+This is the design.md §15 local-dev bootstrap, automated: "seed one demo tenant... seed a tenant_admin user and one demo device with an access token."
+
+**Files:**
+- Create: `api/src/database/scripts/seed-demo.ts`
+- Modify: `api/package.json` (add `seed:demo` script)
+- Test: none (this is an idempotent operational script exercised manually; its building blocks — `TenantProvisioningService`, `KeycloakAdminService`, `DevicesService`, `DeviceCredentialsService` — already have unit tests from Tasks 4/5/10/11)
+
+**Interfaces:**
+- Consumes: `TenantProvisioningService.provision` (Task 4), `KeycloakAdminService.createUser`/`assignRealmRole` (Task 5), `DevicesService.create` (Task 10), `DeviceCredentialsService.issueAccessToken`/`getMetadata` (Task 11), `UserProfile`/`Device` models (Task 4), `TenantContext.run` (Task 7).
+- Produces: a runnable, idempotent `pnpm --filter api run seed:demo` that leaves the system in the exact state Task 18's manual verification checklist assumes.
+
+- [ ] **Step 1: Write `seed-demo.ts`**
+
+```ts
+import 'dotenv/config';
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from '../../app.module';
+import { TenantProvisioningService } from '../../tenancy/tenant-provisioning.service';
+import { TenantContext } from '../../tenancy/tenant-context';
+import { KeycloakAdminService } from '../../keycloak/keycloak-admin.service';
+import { DevicesService } from '../../devices/devices.service';
+import { DeviceCredentialsService } from '../../devices/device-credentials.service';
+import { ControlTenant } from '../models/control/tenant.model';
+import { UserProfile } from '../models/tenant/user-profile.model';
+import { Device } from '../models/tenant/device.model';
+
+const DEMO_SLUG = 'demo';
+const DEMO_ADMIN_EMAIL = 'admin@demo.test';
+const DEMO_ADMIN_PASSWORD = 'DemoPass123!';
+const DEMO_DEVICE_NAME = 'Demo Sensor';
+
+async function main() {
+  const app = await NestFactory.createApplicationContext(AppModule);
+
+  const provisioning = app.get(TenantProvisioningService);
+  const keycloakAdmin = app.get(KeycloakAdminService);
+  const devicesService = app.get(DevicesService);
+  const credentialsService = app.get(DeviceCredentialsService);
+
+  let tenant = await ControlTenant.findOne({ where: { slug: DEMO_SLUG } });
+  if (!tenant) {
+    const provisioned = await provisioning.provision({ slug: DEMO_SLUG, name: 'Demo Tenant' });
+    tenant = await ControlTenant.findByPk(provisioned.id);
+  }
+  if (!tenant) throw new Error('Failed to provision or find the demo tenant');
+  console.log(`Tenant ready: ${tenant.slug} (${tenant.schemaName})`);
+
+  await TenantContext.run(
+    { tenantId: tenant.id, schemaName: tenant.schemaName, slug: tenant.slug },
+    async () => {
+      const ScopedUserProfile = UserProfile.schema(tenant!.schemaName);
+      let profile = await ScopedUserProfile.findOne({ where: { email: DEMO_ADMIN_EMAIL } });
+      if (!profile) {
+        const kcUser = await keycloakAdmin.createUser({
+          email: DEMO_ADMIN_EMAIL,
+          tenantId: tenant!.id,
+          temporaryPassword: DEMO_ADMIN_PASSWORD,
+        });
+        await keycloakAdmin.assignRealmRole(kcUser.id, 'tenant_admin');
+        profile = await ScopedUserProfile.create({
+          keycloakSub: kcUser.id,
+          email: DEMO_ADMIN_EMAIL,
+          displayName: 'Demo Admin',
+          role: 'tenant_admin',
+          status: 'active',
+        });
+        console.log(`Created demo tenant_admin: ${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD} (temporary — Keycloak will prompt a change on first login)`);
+      } else {
+        console.log(`Demo tenant_admin already exists: ${DEMO_ADMIN_EMAIL}`);
+      }
+
+      const ScopedDevice = Device.schema(tenant!.schemaName);
+      let device = await ScopedDevice.findOne({ where: { name: DEMO_DEVICE_NAME } });
+      if (!device) {
+        device = await devicesService.create({ name: DEMO_DEVICE_NAME });
+        console.log(`Created demo device: ${device.id}`);
+      } else {
+        console.log(`Demo device already exists: ${device.id}`);
+      }
+
+      const existingCredential = await credentialsService.getMetadata(device.id);
+      if (!existingCredential) {
+        const { token } = await credentialsService.issueAccessToken(device.id);
+        console.log('\n--- Demo device access token (shown once, save it now) ---');
+        console.log(token);
+        console.log('---\n');
+      } else {
+        console.log('Demo device already has a credential; delete the device row and re-run to reissue a token.');
+      }
+    },
+  );
+
+  await app.close();
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+```
+
+Add to `api/package.json` `scripts`:
+```json
+"seed:demo": "ts-node -r tsconfig-paths/register src/database/scripts/seed-demo.ts"
+```
+
+- [ ] **Step 2: Run the full bootstrap sequence from a clean stack**
+
+```bash
+docker compose -f devops/docker-compose.dev.yml up -d
+docker compose -f devops/keycloak/docker-compose.yml up -d
+pnpm --filter api run migrate:control
+pnpm --filter api run keycloak:bootstrap
+pnpm --filter api run seed:demo
+```
+Expected final output includes `Tenant ready: demo (tenant_demo)`, `Created demo tenant_admin: admin@demo.test / DemoPass123! ...`, `Created demo device: <uuid>`, and a printed access token. **Copy the printed token somewhere** — Task 18's manual `curl` verification needs it.
+
+- [ ] **Step 3: Run it again to confirm idempotency**
+
+Run: `pnpm --filter api run seed:demo`
+Expected: `Tenant ready: demo (tenant_demo)`, `Demo tenant_admin already exists: admin@demo.test`, `Demo device already exists: <same uuid>`, `Demo device already has a credential; ...` — no duplicate rows, no errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add api/src/database/scripts/seed-demo.ts api/package.json
+git commit -m "feat(api): idempotent demo tenant/admin/device seed script"
+```
+
+---
+
+## Task 15: Frontend core — dev proxy, auth flow, responsive shell, routing
+
+**A note on dev hosts (continued from Task 7):** the Angular dev server must also be reachable at `demo.localhost` so cookies and the proxied `/api` calls share a host with the tenant-scoped backend routes. `web/package.json`'s `start` script is changed to `ng serve --host demo.localhost`; since `demo.localhost` resolves to `127.0.0.1`, this binds the same dev server, just reachable under that hostname. If the dev server rejects the request (a Vite/esbuild "Blocked request" host-check error), add `"allowedHosts": ["demo.localhost"]` next to `proxyConfig` in `angular.json`'s serve options.
+
+**Files:**
+- Create: `web/proxy.conf.json`
+- Modify: `web/angular.json` (wire `proxyConfig`)
+- Modify: `web/package.json` (`start` script)
+- Create: `web/src/app/core/models/session.ts`
+- Create: `web/src/app/core/models/device.ts`
+- Create: `web/src/app/core/models/telemetry.ts`
+- Create: `web/src/app/core/auth/auth.service.ts`
+- Create: `web/src/app/core/auth/auth.guard.ts`
+- Create: `web/src/app/core/http/api.interceptor.ts`
+- Create: `web/src/app/layout/shell.ts`
+- Create: `web/src/app/features/auth/login-page.ts`
+- Modify: `web/src/app/app.config.ts`
+- Modify: `web/src/app/app.routes.ts`
+- Modify: `web/src/app/app.ts`
+- Delete content of: `web/src/app/app.html`, `web/src/app/app.css` (replaced by an inline template on `App`)
+- Test: `web/src/app/core/http/api.interceptor.spec.ts`
+
+**Interfaces:**
+- Produces: `AuthService` (`user()`, `isAuthenticated()`, `login()`, `logout()`) — consumed by `Shell` (this task) and later by `DevicesListPage`/`TelemetryViewPage` (Tasks 16–17) if they need the current user.
+- Produces: `authGuard: CanActivateFn` — applied to the shell route.
+- Produces: `apiInterceptor: HttpInterceptorFn` — attaches `X-CSRF-Token` on mutating requests, redirects to the backend login on a 401.
+- Consumes: `GET/POST /api/v1/auth/*` from Task 6.
+
+- [ ] **Step 1: Write the dev proxy and wire it into `angular.json`**
+
+`web/proxy.conf.json`:
+```json
+{
+  "/api": {
+    "target": "http://localhost:3000",
+    "changeOrigin": false,
+    "secure": false
+  }
+}
+```
+
+Edit `web/angular.json`, add an `options` block to the `serve` architect target (read the file first, keep all existing keys):
+```json
+"serve": {
+  "builder": "@angular/build:dev-server",
+  "options": {
+    "proxyConfig": "proxy.conf.json"
+  },
+  "configurations": {
+    "production": { "buildTarget": "web:build:production" },
+    "development": { "buildTarget": "web:build:development" }
+  },
+  "defaultConfiguration": "development"
+}
+```
+
+Edit `web/package.json`'s `start` script:
+```json
+"start": "ng serve --host demo.localhost"
+```
+
+- [ ] **Step 2: Write the shared model interfaces**
+
+`web/src/app/core/models/session.ts`:
+```ts
+export interface SessionUser {
+  sub: string;
+  email: string;
+  tenantId: string;
+  roles: string[];
+}
+
+export interface MeResponse {
+  user: SessionUser;
+}
+```
+
+`web/src/app/core/models/device.ts`:
+```ts
+export interface Device {
+  id: string;
+  name: string;
+  deviceProfileId: string | null;
+  label: string | null;
+  status: string;
+  lastSeenAt: string | null;
+  firmwareVersion: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+`web/src/app/core/models/telemetry.ts`:
+```ts
+export interface TelemetryPoint {
+  device_id: string;
+  key: string;
+  ts: string;
+  value_num: number | null;
+  value_str: string | null;
+  value_bool: boolean | null;
+  value_json: unknown;
+}
+```
+
+- [ ] **Step 3: Write the failing interceptor test**
+
+`web/src/app/core/http/api.interceptor.spec.ts`:
+```ts
+import { TestBed } from '@angular/core/testing';
+import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { apiInterceptor } from './api.interceptor';
+
+describe('apiInterceptor', () => {
+  let http: HttpClient;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    document.cookie = 'csrf_token=test-csrf-value; path=/';
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(withInterceptors([apiInterceptor])),
+        provideHttpClientTesting(),
+      ],
+    });
+    http = TestBed.inject(HttpClient);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('attaches the CSRF header to a POST request', () => {
+    http.post('/api/v1/devices', { name: 'x' }).subscribe();
+    const req = httpMock.expectOne('/api/v1/devices');
+    expect(req.request.headers.get('X-CSRF-Token')).toBe('test-csrf-value');
+    req.flush({});
+  });
+
+  it('does not attach the CSRF header to a GET request', () => {
+    http.get('/api/v1/devices').subscribe();
+    const req = httpMock.expectOne('/api/v1/devices');
+    expect(req.request.headers.has('X-CSRF-Token')).toBe(false);
+    req.flush([]);
+  });
+});
+```
+
+- [ ] **Step 4: Run it to confirm it fails**
+
+Run: `pnpm --filter web test -- --run api.interceptor`
+Expected: FAIL — `Cannot find module './api.interceptor'`
+
+- [ ] **Step 5: Implement `api.interceptor.ts`**
+
+```ts
+import type { HttpInterceptorFn } from '@angular/common/http';
+import { catchError, throwError } from 'rxjs';
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+export const apiInterceptor: HttpInterceptorFn = (req, next) => {
+  const csrfToken = readCookie('csrf_token');
+  const outgoing =
+    MUTATING_METHODS.has(req.method) && csrfToken
+      ? req.clone({ setHeaders: { 'X-CSRF-Token': csrfToken } })
+      : req;
+
+  return next(outgoing).pipe(
+    catchError((error: unknown) => {
+      const isUnauthorized = typeof error === 'object' && error !== null && 'status' in error && (error as { status: number }).status === 401;
+      if (isUnauthorized && !req.url.includes('/auth/me')) {
+        window.location.href = '/api/v1/auth/login';
+      }
+      return throwError(() => error);
+    }),
+  );
+};
+```
+
+- [ ] **Step 6: Run it to confirm it passes**
+
+Run: `pnpm --filter web test -- --run api.interceptor`
+Expected: PASS (2 tests)
+
+- [ ] **Step 7: Write `AuthService`**
+
+If `@Service` is not available in the installed Angular version, use `@Injectable({ providedIn: 'root' })` instead — same effect, just the repo's preferred v22 spelling per `web/.claude/CLAUDE.md`.
+
+`web/src/app/core/auth/auth.service.ts`:
+```ts
+import { Service, computed } from '@angular/core';
+import { httpResource } from '@angular/common/http';
+import type { MeResponse } from '../models/session';
+
+@Service()
+export class AuthService {
+  private readonly meResource = httpResource<MeResponse>(() => '/api/v1/auth/me');
+
+  readonly user = computed(() => this.meResource.value()?.user);
+  readonly isAuthenticated = computed(() => this.meResource.value()?.user !== undefined);
+  readonly isLoading = this.meResource.isLoading;
+
+  login(): void {
+    window.location.href = '/api/v1/auth/login';
+  }
+
+  async logout(): Promise<void> {
+    await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' });
+    window.location.href = '/login';
+  }
+}
+```
+
+- [ ] **Step 8: Write `authGuard`**
+
+Implemented as a plain `fetch` check rather than reading `AuthService`'s resource signal, since a route guard runs before any component (and thus before `AuthService`'s resource) has had a chance to resolve — a direct request is simpler than coordinating resource-loading state at the router level.
+
+`web/src/app/core/auth/auth.guard.ts`:
+```ts
+import { inject } from '@angular/core';
+import { Router, type CanActivateFn } from '@angular/router';
+
+export const authGuard: CanActivateFn = async () => {
+  const router = inject(Router);
+  const response = await fetch('/api/v1/auth/me', { credentials: 'include' });
+  if (response.ok) return true;
+  return router.createUrlTree(['/login']);
+};
+```
+
+- [ ] **Step 9: Write the login page**
+
+`web/src/app/features/auth/login-page.ts`:
+```ts
+import { Component, inject } from '@angular/core';
+import { HlmButtonImports } from '@spartan-ng/helm/button';
+import { AuthService } from '../../core/auth/auth.service';
+
+@Component({
+  selector: 'app-login-page',
+  imports: [HlmButtonImports],
+  template: `
+    <div class="flex min-h-dvh items-center justify-center">
+      <div class="flex flex-col items-center gap-4 rounded-lg border p-8">
+        <h1 class="text-xl font-semibold">Sign in to IoT Platform</h1>
+        <button hlmBtn (click)="auth.login()">Sign in with Keycloak</button>
+      </div>
+    </div>
+  `,
+})
+export class LoginPage {
+  protected readonly auth = inject(AuthService);
+}
+```
+
+- [ ] **Step 10: Write the responsive shell**
+
+`web/src/app/layout/shell.ts`:
+```ts
+import { Component, inject, signal } from '@angular/core';
+import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { HlmButtonImports } from '@spartan-ng/helm/button';
+import { AuthService } from '../core/auth/auth.service';
+
+@Component({
+  selector: 'app-shell',
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, HlmButtonImports],
+  template: `
+    <div class="flex h-dvh flex-col">
+      <header class="flex items-center justify-between border-b px-4 py-3">
+        <div class="flex items-center gap-3">
+          <button
+            hlmBtn
+            variant="ghost"
+            size="icon"
+            class="md:hidden"
+            aria-label="Toggle navigation"
+            (click)="toggleDrawer()"
+          >
+            &#9776;
+          </button>
+          <span class="font-semibold">IoT Platform</span>
+        </div>
+        <div class="flex items-center gap-3">
+          @if (auth.user(); as user) {
+            <span class="text-sm text-muted-foreground">{{ user.email }}</span>
+          }
+          <button hlmBtn variant="outline" size="sm" (click)="auth.logout()">Sign out</button>
+        </div>
+      </header>
+      <div class="flex flex-1 overflow-hidden">
+        <nav class="w-56 shrink-0 border-r p-3 md:block" [class.hidden]="!drawerOpen()">
+          <a routerLink="/devices" routerLinkActive="font-semibold" class="block rounded px-2 py-1.5 hover:bg-muted">
+            Devices
+          </a>
+          <a routerLink="/telemetry" routerLinkActive="font-semibold" class="block rounded px-2 py-1.5 hover:bg-muted">
+            Telemetry
+          </a>
+        </nav>
+        <main class="flex-1 overflow-auto p-4">
+          <router-outlet />
+        </main>
+      </div>
+    </div>
+  `,
+})
+export class Shell {
+  protected readonly auth = inject(AuthService);
+  protected readonly drawerOpen = signal(false);
+
+  protected toggleDrawer(): void {
+    this.drawerOpen.update((open) => !open);
+  }
+}
+```
+
+- [ ] **Step 11: Wire routes and app config**
+
+`web/src/app/app.routes.ts`:
+```ts
+import type { Routes } from '@angular/router';
+import { authGuard } from './core/auth/auth.guard';
+
+export const routes: Routes = [
+  {
+    path: 'login',
+    loadComponent: () => import('./features/auth/login-page').then((m) => m.LoginPage),
+  },
+  {
+    path: '',
+    loadComponent: () => import('./layout/shell').then((m) => m.Shell),
+    canActivate: [authGuard],
+    children: [
+      { path: '', redirectTo: 'devices', pathMatch: 'full' },
+      {
+        path: 'devices',
+        loadComponent: () => import('./features/devices/devices-list.page').then((m) => m.DevicesListPage),
+      },
+      {
+        path: 'telemetry',
+        loadComponent: () => import('./features/telemetry/telemetry-view.page').then((m) => m.TelemetryViewPage),
+      },
+    ],
+  },
+];
+```
+
+(`devices-list.page` and `telemetry-view.page` don't exist until Tasks 16–17 — the app won't compile until then. That's expected; this task ends with a build error that Task 16 resolves, which is fine since they're part of the same plan executed in order. If running this task standalone, stub both with a one-line `template: 'TODO'` component and replace in Tasks 16–17.)
+
+`web/src/app/app.config.ts`:
+```ts
+import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
+import { routes } from './app.routes';
+import { apiInterceptor } from './core/http/api.interceptor';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideBrowserGlobalErrorListeners(),
+    provideRouter(routes),
+    provideHttpClient(withFetch(), withInterceptors([apiInterceptor])),
+  ],
+};
+```
+
+`web/src/app/app.ts` (replace the placeholder entirely):
+```ts
+import { Component } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
+
+@Component({
+  selector: 'app-root',
+  imports: [RouterOutlet],
+  template: `<router-outlet />`,
+})
+export class App {}
+```
+
+Delete `web/src/app/app.html` and `web/src/app/app.css` (no longer referenced — `App` now uses an inline template). Check `web/src/app/app.spec.ts`: if it asserts on the placeholder content (e.g. `Hello, web`), update it to just assert the component creates successfully:
+```ts
+import { TestBed } from '@angular/core/testing';
+import { App } from './app';
+
+describe('App', () => {
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [App] }).compileComponents();
+  });
+
+  it('creates the app', () => {
+    const fixture = TestBed.createComponent(App);
+    expect(fixture.componentInstance).toBeTruthy();
+  });
+});
+```
+
+- [ ] **Step 12: Manual smoke test**
+
+Run backend: `pnpm --filter api start:dev` (in one terminal).
+Run frontend: `pnpm --filter web start` (in another).
+Visit `http://demo.localhost:4200`.
+Expected: redirected to `/login` (via `authGuard`, since there's no session yet), showing the "Sign in with Keycloak" button. Do not click it yet — Tasks 16–17 need to exist first for the post-login redirect target to render anything useful; full login-to-dashboard flow is exercised in Task 18.
+
+- [ ] **Step 13: Commit**
+
+```bash
+git add web/proxy.conf.json web/angular.json web/package.json web/src/app/core web/src/app/layout web/src/app/features/auth web/src/app/app.config.ts web/src/app/app.routes.ts web/src/app/app.ts web/src/app/app.spec.ts
+git rm web/src/app/app.html web/src/app/app.css
+git commit -m "feat(web): auth flow, CSRF interceptor, responsive shell, routing"
+```
+
+---
+
+## Task 16: Devices feature — list, create, issue access token
+
+**Scope note on Spartan UI components:** this repo has the full Spartan component library scaffolded in `web/libs/ui`, but the only directive with a *verified* usage example in this codebase is the button (`<button hlmBtn>`, seen in the original `app.html` placeholder). This task uses plain semantic HTML with Tailwind utility classes for the table and text input, rather than guessing at `HlmInputImports`/`HlmTableImports`' exact directive selectors. Swapping those in later is a pure styling upgrade — check `web/libs/ui/input/src/lib/hlm-input.ts` and `web/libs/ui/table/src/lib/hlm-table.ts` for the exact selectors first.
+
+**Files:**
+- Create: `web/src/app/features/devices/devices.service.ts`
+- Create: `web/src/app/features/devices/devices-list.page.ts`
+- Test: `web/src/app/features/devices/devices.service.spec.ts`
+
+**Interfaces:**
+- Consumes: `Device` model (Task 15), `GET/POST /api/v1/devices`, `POST /api/v1/devices/:id/credentials` (Tasks 10–11).
+- Produces: `DevicesService.devicesResource` (an `httpResource<Device[]>`) — reused by `TelemetryViewPage` (Task 17) for the device picker.
+
+- [ ] **Step 1: Write the failing service test**
+
+`web/src/app/features/devices/devices.service.spec.ts`:
+```ts
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { firstValueFrom } from 'rxjs';
+import { DevicesService } from './devices.service';
+
+describe('DevicesService', () => {
+  let service: DevicesService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [DevicesService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(DevicesService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('POSTs a new device', async () => {
+    const promise = firstValueFrom(service.create({ name: 'Sensor 1' }));
+    const req = httpMock.expectOne('/api/v1/devices');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ name: 'Sensor 1' });
+    req.flush({ id: 'd1', name: 'Sensor 1' });
+    await expect(promise).resolves.toEqual({ id: 'd1', name: 'Sensor 1' });
+  });
+
+  it('POSTs to issue a credential for a device', async () => {
+    const promise = firstValueFrom(service.issueCredential('d1'));
+    const req = httpMock.expectOne('/api/v1/devices/d1/credentials');
+    expect(req.request.method).toBe('POST');
+    req.flush({ token: 'plaintext-token', credential: { id: 'c1', deviceId: 'd1', credentialType: 'access_token' } });
+    await expect(promise).resolves.toEqual(
+      expect.objectContaining({ token: 'plaintext-token' }),
+    );
+  });
+});
+```
+
+- [ ] **Step 2: Run it to confirm it fails**
+
+Run: `pnpm --filter web test -- --run devices.service`
+Expected: FAIL — `Cannot find module './devices.service'`
+
+- [ ] **Step 3: Implement `DevicesService`**
+
+```ts
+import { Service, inject } from '@angular/core';
+import { HttpClient, httpResource } from '@angular/common/http';
+import type { Device } from '../../core/models/device';
+
+export interface CreateDevicePayload {
+  name: string;
+  deviceProfileId?: string;
+  label?: string;
+}
+
+export interface IssuedCredential {
+  token: string;
+  credential: { id: string; deviceId: string; credentialType: string };
+}
+
+@Service()
+export class DevicesService {
+  private readonly http = inject(HttpClient);
+
+  readonly devicesResource = httpResource<Device[]>(() => '/api/v1/devices');
+
+  create(payload: CreateDevicePayload) {
+    return this.http.post<Device>('/api/v1/devices', payload);
+  }
+
+  issueCredential(deviceId: string) {
+    return this.http.post<IssuedCredential>(`/api/v1/devices/${deviceId}/credentials`, {});
+  }
+
+  refresh(): void {
+    this.devicesResource.reload();
+  }
+}
+```
+
+- [ ] **Step 4: Run it to confirm it passes**
+
+Run: `pnpm --filter web test -- --run devices.service`
+Expected: PASS (2 tests)
+
+- [ ] **Step 5: Write `DevicesListPage`**
+
+```ts
+import { Component, inject, signal } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
+import { HlmButtonImports } from '@spartan-ng/helm/button';
+import { DevicesService } from './devices.service';
+
+@Component({
+  selector: 'app-devices-list-page',
+  imports: [HlmButtonImports],
+  template: `
+    <div class="space-y-6">
+      <h1 class="text-lg font-semibold">Devices</h1>
+
+      <div class="flex items-end gap-2">
+        <div class="flex flex-col gap-1">
+          <label for="device-name" class="text-sm font-medium">New device name</label>
+          <input
+            id="device-name"
+            class="rounded border px-3 py-1.5 text-sm"
+            [value]="newDeviceName()"
+            (input)="newDeviceName.set($any($event.target).value)"
+          />
+        </div>
+        <button hlmBtn [disabled]="creating() || !newDeviceName().trim()" (click)="createDevice()">
+          Create device
+        </button>
+      </div>
+
+      @if (revealedToken(); as revealed) {
+        <div class="rounded border border-amber-400 bg-amber-50 p-3 text-sm dark:bg-amber-950">
+          <p class="font-medium">Access token for this device (shown once — copy it now):</p>
+          <code class="break-all">{{ revealed.token }}</code>
+        </div>
+      }
+
+      @if (devicesService.devicesResource.value(); as devices) {
+        <table class="w-full border-collapse text-sm">
+          <thead>
+            <tr class="border-b text-left">
+              <th class="py-2">Name</th>
+              <th class="py-2">Status</th>
+              <th class="py-2">Last seen</th>
+              <th class="py-2">Credential</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (device of devices; track device.id) {
+              <tr class="border-b">
+                <td class="py-2">{{ device.name }}</td>
+                <td class="py-2">{{ device.status }}</td>
+                <td class="py-2">{{ device.lastSeenAt ?? '—' }}</td>
+                <td class="py-2">
+                  <button hlmBtn variant="outline" size="sm" (click)="issueToken(device.id)">Issue token</button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      } @else if (devicesService.devicesResource.isLoading()) {
+        <p>Loading devices…</p>
+      } @else {
+        <p>No devices yet.</p>
+      }
+    </div>
+  `,
+})
+export class DevicesListPage {
+  protected readonly devicesService = inject(DevicesService);
+  protected readonly newDeviceName = signal('');
+  protected readonly creating = signal(false);
+  protected readonly revealedToken = signal<{ deviceId: string; token: string } | null>(null);
+
+  protected async createDevice(): Promise<void> {
+    const name = this.newDeviceName().trim();
+    if (!name) return;
+    this.creating.set(true);
+    try {
+      await firstValueFrom(this.devicesService.create({ name }));
+      this.newDeviceName.set('');
+      this.devicesService.refresh();
+    } finally {
+      this.creating.set(false);
+    }
+  }
+
+  protected async issueToken(deviceId: string): Promise<void> {
+    const result = await firstValueFrom(this.devicesService.issueCredential(deviceId));
+    this.revealedToken.set({ deviceId, token: result.token });
+  }
+}
+```
+
+- [ ] **Step 6: Manual smoke test**
+
+With backend + frontend running and logged in as `admin@demo.test` (Task 18 covers the full login flow), visit `http://demo.localhost:4200/devices`, create a device, click "Issue token", confirm the token renders in the amber callout and the devices table lists the new row.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add web/src/app/features/devices
+git commit -m "feat(web): devices list, create, and access-token issuance"
+```
+
+---
+
+## Task 17: Minimal telemetry view — latest values table + line chart
+
+**Files:**
+- Create: `web/src/app/features/telemetry/telemetry.service.ts`
+- Create: `web/src/app/features/telemetry/telemetry-view.page.ts`
+- Modify: `web/src/app/app.config.ts` (register the ECharts renderer)
+- Install: `echarts ngx-echarts`
+- Test: `web/src/app/features/telemetry/telemetry.service.spec.ts`
+
+**Interfaces:**
+- Consumes: `TelemetryPoint` model (Task 15), `GET /api/v1/telemetry/latest`/`series` (Task 13), `DevicesService.devicesResource` (Task 16).
+
+**Verify before starting:** `ngx-echarts`'s standalone provider API has changed across major versions. Run `pnpm --filter web add echarts ngx-echarts`, then check the installed `ngx-echarts` version's README/changelog for the current provider function name (this plan assumes `provideEchartsCore`, current as of ngx-echarts v17+) and adjust Step 4 below if it differs.
+
+- [ ] **Step 1: Install dependencies**
+
+Run: `pnpm --filter web add echarts ngx-echarts`
+
+- [ ] **Step 2: Write the failing service test**
+
+`web/src/app/features/telemetry/telemetry.service.spec.ts`:
+```ts
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { firstValueFrom } from 'rxjs';
+import { TelemetryService } from './telemetry.service';
+
+describe('TelemetryService', () => {
+  let service: TelemetryService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [TelemetryService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(TelemetryService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('requests latest values with a comma-joined deviceIds param', async () => {
+    const promise = firstValueFrom(service.latest(['d1', 'd2']));
+    const req = httpMock.expectOne((r) => r.url === '/api/v1/telemetry/latest');
+    expect(req.request.params.get('deviceIds')).toBe('d1,d2');
+    req.flush([]);
+    await promise;
+  });
+
+  it('requests a series for a device/key pair', async () => {
+    const promise = firstValueFrom(service.series('d1', 'temp'));
+    const req = httpMock.expectOne((r) => r.url === '/api/v1/telemetry/series');
+    expect(req.request.params.get('deviceId')).toBe('d1');
+    expect(req.request.params.get('key')).toBe('temp');
+    req.flush([]);
+    await promise;
+  });
+});
+```
+
+- [ ] **Step 3: Run it to confirm it fails, then implement**
+
+Run: `pnpm --filter web test -- --run telemetry.service` → FAIL (module not found).
+
+`web/src/app/features/telemetry/telemetry.service.ts`:
+```ts
+import { Service, inject } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import type { TelemetryPoint } from '../../core/models/telemetry';
+
+@Service()
+export class TelemetryService {
+  private readonly http = inject(HttpClient);
+
+  latest(deviceIds: string[], keys?: string[]) {
+    let params = new HttpParams().set('deviceIds', deviceIds.join(','));
+    if (keys && keys.length > 0) params = params.set('keys', keys.join(','));
+    return this.http.get<TelemetryPoint[]>('/api/v1/telemetry/latest', { params });
+  }
+
+  series(deviceId: string, key: string) {
+    const params = new HttpParams().set('deviceId', deviceId).set('key', key);
+    return this.http.get<TelemetryPoint[]>('/api/v1/telemetry/series', { params });
+  }
+}
+```
+
+Run: `pnpm --filter web test -- --run telemetry.service` → PASS (2 tests)
+
+- [ ] **Step 4: Register the ECharts renderer in `app.config.ts`**
+
+```ts
+import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
+import { provideEchartsCore } from 'ngx-echarts';
+import { routes } from './app.routes';
+import { apiInterceptor } from './core/http/api.interceptor';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideBrowserGlobalErrorListeners(),
+    provideRouter(routes),
+    provideHttpClient(withFetch(), withInterceptors([apiInterceptor])),
+    provideEchartsCore({ echarts: () => import('echarts') }),
+  ],
+};
+```
+
+- [ ] **Step 5: Write `TelemetryViewPage`**
+
+```ts
+import { Component, computed, inject, signal } from '@angular/core';
+import { httpResource } from '@angular/common/http';
+import { NgxEchartsDirective } from 'ngx-echarts';
+import type { EChartsCoreOption } from 'echarts/core';
+import { DevicesService } from '../devices/devices.service';
+import type { TelemetryPoint } from '../../core/models/telemetry';
+
+@Component({
+  selector: 'app-telemetry-view-page',
+  imports: [NgxEchartsDirective],
+  template: `
+    <div class="space-y-4">
+      <h1 class="text-lg font-semibold">Telemetry</h1>
+
+      <select
+        class="rounded border px-2 py-1 text-sm"
+        [value]="selectedDeviceId()"
+        (change)="selectedDeviceId.set($any($event.target).value)"
+      >
+        <option value="" disabled>Select a device</option>
+        @for (device of devicesService.devicesResource.value() ?? []; track device.id) {
+          <option [value]="device.id">{{ device.name }}</option>
+        }
+      </select>
+
+      @if (latestResource.value(); as points) {
+        <table class="w-full border-collapse text-sm">
+          <thead>
+            <tr class="border-b text-left">
+              <th class="py-2">Key</th>
+              <th class="py-2">Value</th>
+              <th class="py-2">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (point of points; track point.key) {
+              <tr class="border-b">
+                <td class="py-2">{{ point.key }}</td>
+                <td class="py-2">{{ point.value_num ?? point.value_str ?? point.value_bool }}</td>
+                <td class="py-2">{{ point.ts }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+
+      @if (chartOption(); as option) {
+        <div echarts [options]="option" class="h-80 w-full"></div>
+      }
+    </div>
+  `,
+})
+export class TelemetryViewPage {
+  protected readonly devicesService = inject(DevicesService);
+  protected readonly selectedDeviceId = signal('');
+
+  protected readonly latestResource = httpResource<TelemetryPoint[]>(() => {
+    const deviceId = this.selectedDeviceId();
+    return deviceId ? `/api/v1/telemetry/latest?deviceIds=${deviceId}` : undefined;
+  });
+
+  private readonly firstNumericKey = computed(() => {
+    const points = this.latestResource.value() ?? [];
+    return points.find((p) => p.value_num !== null)?.key;
+  });
+
+  protected readonly seriesResource = httpResource<TelemetryPoint[]>(() => {
+    const deviceId = this.selectedDeviceId();
+    const key = this.firstNumericKey();
+    return deviceId && key ? `/api/v1/telemetry/series?deviceId=${deviceId}&key=${key}` : undefined;
+  });
+
+  protected readonly chartOption = computed<EChartsCoreOption | null>(() => {
+    const series = this.seriesResource.value();
+    if (!series || series.length === 0) return null;
+    return {
+      xAxis: { type: 'category', data: series.map((p) => new Date(p.ts).toLocaleTimeString()) },
+      yAxis: { type: 'value' },
+      series: [{ type: 'line', data: series.map((p) => p.value_num) }],
+    };
+  });
+}
+```
+
+- [ ] **Step 6: Manual smoke test**
+
+With a device selected that has telemetry (Task 18 will have posted some via `curl`), visit `http://demo.localhost:4200/telemetry`, select the demo device, confirm the latest-values table and the line chart both render.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add web/src/app/features/telemetry web/src/app/app.config.ts web/package.json pnpm-lock.yaml
+git commit -m "feat(web): minimal telemetry view with latest values table and line chart"
+```
+
+---
+
+## Task 18: End-to-end manual verification against the Phase 1.1 acceptance test
+
+design.md §17's Phase 1.1 acceptance test: *"A tenant admin logs in with a password, creates a device, receives an access token, the device `POST`s telemetry over HTTP, and the latest values appear in the UI."* This task walks that path for real, plus spot-checks the two cross-cutting guards (`TenantGuard`, CSRF) that unit tests couldn't fully exercise against a live browser session.
+
+**Files:** none (verification only). If any step fails, fix the responsible task's code and re-run from that step.
+
+- [ ] **Step 1: Bring up a clean stack**
+
+```bash
+docker compose -f devops/docker-compose.dev.yml down -v
+docker compose -f devops/keycloak/docker-compose.yml up -d
+docker compose -f devops/docker-compose.dev.yml up -d
+```
+Wait ~10s for Postgres/Redis/Keycloak to finish starting.
+
+- [ ] **Step 2: Run the bootstrap sequence**
+
+```bash
+pnpm --filter api run migrate:control
+pnpm --filter api run keycloak:bootstrap
+pnpm --filter api run seed:demo
+```
+Copy the printed demo device access token — call it `$DEMO_TOKEN` below.
+
+- [ ] **Step 3: Start both dev servers**
+
+Terminal 1: `pnpm --filter api start:dev`
+Terminal 2: `pnpm --filter web start` (serves on `http://demo.localhost:4200` per Task 15)
+
+- [ ] **Step 4: Log in as the seeded tenant admin**
+
+Visit `http://demo.localhost:4200`. Expected: redirected to `/login`.
+Click "Sign in with Keycloak". Expected: redirected to `http://demo.localhost:8081/realms/thingsvu/...` — if Keycloak rejects `demo.localhost:8081` as a host, use `http://localhost:8081` for this hop only (Keycloak itself isn't tenant-scoped by subdomain in this plan; only `api`/`web` are).
+Log in with `admin@demo.test` / `DemoPass123!`. Keycloak will prompt a password change (the credential was created with `temporary: true`) — set any new password you'll remember.
+Expected: redirected back to `http://demo.localhost:4200/devices`, topbar shows `admin@demo.test`.
+
+- [ ] **Step 5: Confirm the seeded device and token still work**
+
+Visit `/devices`. Expected: "Demo Sensor" is listed with status `active`.
+(Skip issuing a new token — that would invalidate `$DEMO_TOKEN` from Step 2. If you want to test the "Issue token" button, create a *second* device first.)
+
+- [ ] **Step 6: POST telemetry as the device**
+
+```bash
+curl -i -X POST http://demo.localhost:3000/api/v1/device/telemetry \
+  -H "Content-Type: application/json" \
+  -H "X-Device-Token: $DEMO_TOKEN" \
+  -d '{"values":{"temp":23.4,"humidity":48,"online":true}}'
+```
+Expected: `HTTP/1.1 204 No Content`.
+
+- [ ] **Step 7: Confirm the values appear in the UI**
+
+Visit `/telemetry`, select "Demo Sensor" from the dropdown.
+Expected: the latest-values table shows `temp = 23.4`, `humidity = 48`, `online = true`; the line chart renders a single point for `temp` (POST a couple more telemetry payloads a few seconds apart, per Step 6, with different `temp` values, to see the line actually move).
+
+This satisfies the Phase 1.1 acceptance test end to end.
+
+- [ ] **Step 8: Spot-check `TenantGuard` (cross-tenant / no-tenant rejection)**
+
+With the same browser session (still logged in via `demo.localhost`), visit `http://localhost:3000/api/v1/devices` directly (note: plain `localhost`, no `demo.` subdomain, and no cookie will actually be sent here since the session cookie is scoped to `demo.localhost` — that alone would 401; to specifically exercise the *tenant mismatch* branch rather than the *no-session* branch, use curl with the cookie explicitly):
+
+```bash
+curl -i http://localhost:3000/api/v1/devices \
+  -H "Cookie: sid=<value copied from the demo.localhost browser session's cookie jar>"
+```
+Expected: `403 Forbidden`, `"This route requires a tenant subdomain"` (plain `localhost` has no subdomain, so `TenantResolutionMiddleware` never populates `TenantContext`, and `TenantGuard` rejects).
+
+- [ ] **Step 9: Spot-check CSRF protection**
+
+```bash
+curl -i -X POST http://demo.localhost:3000/api/v1/devices \
+  -H "Content-Type: application/json" \
+  -H "Cookie: sid=<same session cookie>" \
+  -d '{"name":"Should Be Rejected"}'
+```
+Expected: `403 Forbidden`, `"Invalid or missing CSRF token"` (no `X-CSRF-Token` header sent). Confirm the device was **not** created (`GET /api/v1/devices` from the browser still shows only the devices you created through the UI).
+
+- [ ] **Step 10: Run the full test suite one more time**
+
+```bash
+pnpm --filter api test
+pnpm --filter api run test:e2e
+pnpm --filter web test -- --run
+```
+Expected: all green.
+
+- [ ] **Step 11: Commit** (only if Step 10 required fixes; otherwise nothing to commit)
+
+```bash
+git add -A
+git commit -m "fix: address issues found during Phase 1.1 end-to-end verification"
+```
+
+---
+
+## Plan self-review
+
+**Spec coverage (design.md §17 Phase 1.1 bullets):**
+- Monorepo scaffold + Docker Compose dev stack → Task 1 (Postgres/Redis; Keycloak was already running).
+- Control-plane schema + tenant provisioning routine → Tasks 3–4.
+- Keycloak realm/clients, password login via web BFF, `/api/v1/auth/me` → Tasks 5–6.
+- Angular shell: responsive layout, login redirect, authenticated routing → Task 15.
+- Tenant + user management → Tasks 8–9.
+- Device profiles + devices CRUD, access-token provisioning → Tasks 10–11.
+- HTTP telemetry ingestion → Task 12.
+- Minimal telemetry view → Tasks 13, 17.
+- Acceptance test → Task 18.
+
+**Placeholder scan:** no `TBD`/`TODO`/"add error handling here" left in any step; the two spots that read like hedges (`@Service` vs `@Injectable` fallback in Tasks 15–17; `provideEchartsCore` name-check in Task 17) each give a concrete, working alternative, not an unresolved gap — they exist because this plan targets library versions (Angular 22, `ngx-echarts`) newer than what could be directly verified against installed `node_modules` during planning.
+
+**Type consistency:** `SessionUser` (Task 6) is used identically by `TenantGuard`/`RolesGuard`/`CurrentUser` (Task 7) and the frontend `SessionUser` model (Task 15) mirrors its shape. `DeviceAuthContext` (Task 12) is distinct from `TenantContextValue` (Task 7) on purpose — documented inline in Task 12 — since device-facing requests never go through subdomain resolution. `SchemaMigration` (Task 3) is the single shape implemented by both `controlMigrations` (Task 3) and `tenantMigrations` (Task 4), and consumed identically by `createSchemaMigrator` and `TenantProvisioningService`.
+
