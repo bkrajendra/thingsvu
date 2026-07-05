@@ -47,9 +47,17 @@ export class TenantResolutionMiddleware implements NestMiddleware {
   }
 
   private extractSlug(hostname: string): string | null {
+    if (this.isIpAddress(hostname)) return null;
     const parts = hostname.split('.');
     if (parts.length < 2) return null;
     if (parts[0] === 'www') return null;
     return parts[0];
+  }
+
+  // Supertest/CI/health-check clients commonly connect via a raw IPv4 address
+  // (e.g. 127.0.0.1). Without this check, extractSlug would treat "127" as a
+  // tenant slug and 404 every request before it reaches any route.
+  private isIpAddress(hostname: string): boolean {
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
   }
 }
