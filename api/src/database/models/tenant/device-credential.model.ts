@@ -49,7 +49,6 @@ export class DeviceCredential extends Model {
         tableName: 'device_credentials',
         underscored: true,
         timestamps: true,
-        createdAt: 'created_at',
         updatedAt: false,
       },
     );

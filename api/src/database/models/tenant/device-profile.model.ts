@@ -46,8 +46,6 @@ export class DeviceProfile extends Model {
         tableName: 'device_profiles',
         underscored: true,
         timestamps: true,
-        createdAt: 'created_at',
-        updatedAt: 'updated_at',
       },
     );
     return DeviceProfile;

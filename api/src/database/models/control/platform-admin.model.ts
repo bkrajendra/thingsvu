@@ -28,7 +28,6 @@ export class ControlPlatformAdmin extends Model {
         tableName: 'platform_admins',
         underscored: true,
         timestamps: true,
-        createdAt: 'created_at',
         updatedAt: false,
       },
     );

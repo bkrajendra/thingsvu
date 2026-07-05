@@ -44,8 +44,6 @@ export class UserProfile extends Model {
         tableName: 'user_profiles',
         underscored: true,
         timestamps: true,
-        createdAt: 'created_at',
-        updatedAt: 'updated_at',
       },
     );
     return UserProfile;

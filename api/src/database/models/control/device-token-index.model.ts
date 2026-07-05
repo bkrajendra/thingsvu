@@ -37,7 +37,6 @@ export class ControlDeviceTokenIndex extends Model {
         tableName: 'device_token_index',
         underscored: true,
         timestamps: true,
-        createdAt: 'created_at',
         updatedAt: false,
       },
     );

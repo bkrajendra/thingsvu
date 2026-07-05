@@ -24,7 +24,6 @@ export class DeviceAttribute extends Model {
         underscored: true,
         timestamps: true,
         createdAt: false,
-        updatedAt: 'updated_at',
       },
     );
     return DeviceAttribute;
