@@ -60,7 +60,9 @@ export class TelemetryViewPage {
 
   protected readonly latestResource = httpResource<TelemetryPoint[]>(() => {
     const deviceId = this.selectedDeviceId();
-    return deviceId ? `/api/v1/telemetry/latest?deviceIds=${deviceId}` : undefined;
+    return deviceId
+      ? { url: '/api/v1/telemetry/latest', params: { deviceIds: deviceId } }
+      : undefined;
   });
 
   private readonly firstNumericKey = computed(() => {
@@ -71,7 +73,9 @@ export class TelemetryViewPage {
   protected readonly seriesResource = httpResource<TelemetryPoint[]>(() => {
     const deviceId = this.selectedDeviceId();
     const key = this.firstNumericKey();
-    return deviceId && key ? `/api/v1/telemetry/series?deviceId=${deviceId}&key=${key}` : undefined;
+    return deviceId && key
+      ? { url: '/api/v1/telemetry/series', params: { deviceId, key } }
+      : undefined;
   });
 
   protected readonly chartOption = computed<EChartsCoreOption | null>(() => {

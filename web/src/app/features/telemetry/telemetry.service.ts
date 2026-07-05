@@ -2,6 +2,9 @@ import { Service, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import type { TelemetryPoint } from '../../core/models/telemetry';
 
+// Observable-returning wrapper for imperative (non-httpResource) call sites,
+// e.g. a future export/download action. TelemetryViewPage reads via
+// httpResource directly since it needs reactive, conditional refetching.
 @Service()
 export class TelemetryService {
   private readonly http = inject(HttpClient);
