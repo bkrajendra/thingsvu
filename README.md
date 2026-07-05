@@ -133,6 +133,8 @@ pnpm --filter web test        # frontend unit tests
 
 Most backend tests hit the real Postgres/Keycloak instances rather than mocking them (the whole point of a lot of this code — SQL correctness, Keycloak's admin REST wire format — can't be verified against a mock). Make sure the containers from Step 2 are running.
 
+If you see widespread test timeouts that clear up on a second run, it's usually Jest's default parallel workers opening more concurrent Postgres connections than a lightly-resourced dev container can comfortably serve, not a real failure — run `npx jest --runInBand` (from `api/`) to confirm before chasing a phantom bug.
+
 ## Known dev-environment quirks
 
 ### Windows `*.localhost` resolution
