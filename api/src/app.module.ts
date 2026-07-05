@@ -12,6 +12,7 @@ import { UsersModule } from './users/users.module';
 import { DeviceProfilesModule } from './device-profiles/device-profiles.module';
 import { DevicesModule } from './devices/devices.module';
 import { IngestionModule } from './ingestion/ingestion.module';
+import { TelemetryModule } from './telemetry/telemetry.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { IngestionModule } from './ingestion/ingestion.module';
     DeviceProfilesModule,
     DevicesModule,
     IngestionModule,
+    TelemetryModule,
   ],
   controllers: [AppController],
   providers: [AppService],
