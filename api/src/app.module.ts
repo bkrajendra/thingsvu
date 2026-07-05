@@ -7,9 +7,10 @@ import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { TenantResolutionMiddleware } from './tenancy/tenant-resolution.middleware';
+import { TenantsModule } from './tenants/tenants.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, RedisModule, AuthModule, TenancyModule],
+  imports: [ConfigModule, DatabaseModule, RedisModule, AuthModule, TenancyModule, TenantsModule],
   controllers: [AppController],
   providers: [AppService],
 })
