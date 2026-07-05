@@ -44,6 +44,10 @@ describe('TenantProvisioningService', () => {
     await sequelize.query(
       `DELETE FROM control.tenants WHERE slug = 'provtest'`,
     );
+    await sequelize.query(`DROP SCHEMA IF EXISTS tenant_provfail CASCADE`);
+    await sequelize.query(
+      `DELETE FROM control.tenants WHERE slug = 'provfail'`,
+    );
   });
 
   afterAll(async () => {
@@ -76,5 +80,23 @@ describe('TenantProvisioningService', () => {
       `SELECT count(*)::int AS count FROM control.tenants WHERE slug = 'provtest'`,
     );
     expect((rows as Array<{ count: number }>)[0].count).toBe(1);
+  });
+
+  it('rolls back the control.tenants row if a later statement in the transaction fails', async () => {
+    // Pre-create the target schema so provision()'s own `CREATE SCHEMA "tenant_provfail"`
+    // (no IF NOT EXISTS) fails *after* the control.tenants row has already been inserted
+    // inside the same transaction -- this exercises actual transactional rollback,
+    // unlike the duplicate-slug test above which is rejected by the pre-check before
+    // the transaction ever opens.
+    await sequelize.query(`CREATE SCHEMA "tenant_provfail"`);
+
+    await expect(
+      service.provision({ slug: 'provfail', name: 'Prov Fail' }),
+    ).rejects.toThrow();
+
+    const [rows] = await sequelize.query(
+      `SELECT count(*)::int AS count FROM control.tenants WHERE slug = 'provfail'`,
+    );
+    expect((rows as Array<{ count: number }>)[0].count).toBe(0);
   });
 });
