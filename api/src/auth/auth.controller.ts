@@ -48,10 +48,16 @@ export class AuthController {
       { code, state },
       { codeVerifier: req.session.pkceVerifier, state: req.session.oauthState },
     );
+    const sessionUser = this.authService.toSessionUser(tokenSet);
 
-    req.session.user = this.authService.toSessionUser(tokenSet);
-    delete req.session.pkceVerifier;
-    delete req.session.oauthState;
+    // Regenerate the session on successful login (new session ID) rather than
+    // reusing the pre-auth session — prevents session fixation, where an
+    // attacker who planted a known session ID before login would otherwise
+    // inherit the now-authenticated session.
+    await new Promise<void>((resolve, reject) => {
+      req.session.regenerate((err) => (err ? reject(err) : resolve()));
+    });
+    req.session.user = sessionUser;
 
     const csrfToken = randomBytes(24).toString('hex');
     res.cookie('csrf_token', csrfToken, {
@@ -65,9 +71,18 @@ export class AuthController {
 
   @Post('logout')
   logout(@Req() req: Request, @Res() res: Response): void {
+    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
     req.session.destroy(() => {
-      res.clearCookie(this.config.get<string>('SESSION_COOKIE_NAME')!);
-      res.clearCookie('csrf_token');
+      res.clearCookie(this.config.get<string>('SESSION_COOKIE_NAME')!, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: isProduction,
+      });
+      res.clearCookie('csrf_token', {
+        httpOnly: false,
+        sameSite: 'lax',
+        secure: isProduction,
+      });
       res.status(204).send();
     });
   }
