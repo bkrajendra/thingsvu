@@ -20,6 +20,12 @@ async function main() {
     'tenant_id protocol mapper ensured on client',
     process.env.KEYCLOAK_CLIENT_ID,
   );
+
+  await service.ensureTenantIdUserProfileAttribute();
+  console.log('tenant_id declared as a valid user profile attribute');
+
+  await service.ensureRealmRolesInIdToken();
+  console.log('realm roles included in the ID token');
 }
 
 main().catch((err) => {

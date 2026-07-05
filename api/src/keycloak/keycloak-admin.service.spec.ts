@@ -36,4 +36,43 @@ describe('KeycloakAdminService', () => {
     const second = await service.ensureTenantGroup('spec_test_tenant');
     expect(first.id).toEqual(second.id);
   });
+
+  it('ensureTenantIdUserProfileAttribute declares tenant_id and is idempotent', async () => {
+    await service.ensureTenantIdUserProfileAttribute();
+    await expect(
+      service.ensureTenantIdUserProfileAttribute(),
+    ).resolves.not.toThrow();
+
+    const token = await service.getAdminToken();
+    const res = await fetch(`${config.adminBaseUrl}/admin/realms/${config.realm}/users/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const profile = (await res.json()) as { attributes: Array<{ name: string }> };
+    expect(profile.attributes.some((a) => a.name === 'tenant_id')).toBe(true);
+  });
+
+  it('ensureRealmRolesInIdToken enables id.token.claim on the realm-role mapper and is idempotent', async () => {
+    await service.ensureRealmRolesInIdToken();
+    await expect(service.ensureRealmRolesInIdToken()).resolves.not.toThrow();
+
+    const token = await service.getAdminToken();
+    const scopesRes = await fetch(
+      `${config.adminBaseUrl}/admin/realms/${config.realm}/client-scopes`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const scopes = (await scopesRes.json()) as Array<{ id: string; name: string }>;
+    const rolesScope = scopes.find((s) => s.name === 'roles')!;
+    const mappersRes = await fetch(
+      `${config.adminBaseUrl}/admin/realms/${config.realm}/client-scopes/${rolesScope.id}/protocol-mappers/models`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const mappers = (await mappersRes.json()) as Array<{
+      protocolMapper: string;
+      config: Record<string, string>;
+    }>;
+    const realmRoleMapper = mappers.find(
+      (m) => m.protocolMapper === 'oidc-usermodel-realm-role-mapper',
+    )!;
+    expect(realmRoleMapper.config['id.token.claim']).toBe('true');
+  });
 });

@@ -190,6 +190,100 @@ export class KeycloakAdminService {
     }
   }
 
+  // Keycloak's declarative "User Profile" feature only persists attributes it
+  // knows about; by default that's username/email/firstName/lastName. Any
+  // other attribute set via the admin API (like our tenant_id) is silently
+  // dropped -- no error, the write just doesn't stick -- unless it's
+  // explicitly declared here. Admin-only view/edit: this is an internal
+  // routing attribute, not something end users should see or change via the
+  // Keycloak account console.
+  async ensureTenantIdUserProfileAttribute(): Promise<void> {
+    const res = await this.adminFetch('/users/profile');
+    if (!res.ok) {
+      throw new Error(
+        `Failed to fetch user profile config: ${res.status} ${await res.text()}`,
+      );
+    }
+    const profile = (await res.json()) as {
+      attributes: Array<{ name: string }>;
+      [key: string]: unknown;
+    };
+    if (profile.attributes.some((a) => a.name === 'tenant_id')) return;
+
+    profile.attributes.push({
+      name: 'tenant_id',
+      displayName: 'Tenant ID',
+      permissions: { view: ['admin'], edit: ['admin'] },
+      multivalued: false,
+    } as unknown as { name: string });
+
+    const updated = await this.adminFetch('/users/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profile),
+    });
+    if (!updated.ok) {
+      throw new Error(
+        `Failed to declare tenant_id in user profile: ${updated.status} ${await updated.text()}`,
+      );
+    }
+  }
+
+  // The realm's built-in "roles" client scope maps realm_access.roles into
+  // the access token by default, but NOT the ID token. This app's BFF only
+  // ever decodes the ID token (via openid-client's TokenSet.claims()), so
+  // without this fix every session's roles come back empty and RolesGuard
+  // rejects everyone. Enables id.token.claim on that mapper.
+  async ensureRealmRolesInIdToken(): Promise<void> {
+    const scopesRes = await this.adminFetch('/client-scopes');
+    if (!scopesRes.ok) {
+      throw new Error(
+        `Failed to list client scopes: ${scopesRes.status} ${await scopesRes.text()}`,
+      );
+    }
+    const scopes = (await scopesRes.json()) as Array<{ id: string; name: string }>;
+    const rolesScope = scopes.find((s) => s.name === 'roles');
+    if (!rolesScope) {
+      throw new Error('Realm has no "roles" client scope');
+    }
+
+    const mappersRes = await this.adminFetch(
+      `/client-scopes/${rolesScope.id}/protocol-mappers/models`,
+    );
+    if (!mappersRes.ok) {
+      throw new Error(
+        `Failed to list protocol mappers for roles scope: ${mappersRes.status} ${await mappersRes.text()}`,
+      );
+    }
+    const mappers = (await mappersRes.json()) as Array<{
+      id: string;
+      protocolMapper: string;
+      config: Record<string, string>;
+    }>;
+    const realmRoleMapper = mappers.find(
+      (m) => m.protocolMapper === 'oidc-usermodel-realm-role-mapper',
+    );
+    if (!realmRoleMapper) {
+      throw new Error('roles scope has no realm-role mapper');
+    }
+    if (realmRoleMapper.config['id.token.claim'] === 'true') return;
+
+    const updated = await this.adminFetch(
+      `/client-scopes/${rolesScope.id}/protocol-mappers/models/${realmRoleMapper.id}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...realmRoleMapper,
+          config: { ...realmRoleMapper.config, 'id.token.claim': 'true' },
+        }),
+      },
+    );
+    if (!updated.ok) {
+      throw new Error(
+        `Failed to enable id.token.claim on realm-role mapper: ${updated.status} ${await updated.text()}`,
+      );
+    }
+  }
+
   async createUser(input: {
     email: string;
     tenantId: string;
