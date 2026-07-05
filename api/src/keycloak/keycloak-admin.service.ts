@@ -89,6 +89,11 @@ export class KeycloakAdminService {
       );
     }
     const fetched = await this.adminFetch(`/roles/${encodeURIComponent(name)}`);
+    if (!fetched.ok) {
+      throw new Error(
+        `Failed to fetch role ${name} after creation: ${fetched.status} ${await fetched.text()}`,
+      );
+    }
     return (await fetched.json()) as KeycloakRole;
   }
 
@@ -97,6 +102,11 @@ export class KeycloakAdminService {
     const found = await this.adminFetch(
       `/groups?search=${encodeURIComponent(groupName)}&exact=true`,
     );
+    if (!found.ok) {
+      throw new Error(
+        `Failed to search for group ${groupName}: ${found.status} ${await found.text()}`,
+      );
+    }
     const foundGroups = (await found.json()) as KeycloakGroup[];
     const existing = foundGroups.find((g) => g.name === groupName);
     if (existing) return existing;
@@ -113,6 +123,11 @@ export class KeycloakAdminService {
     const refetched = await this.adminFetch(
       `/groups?search=${encodeURIComponent(groupName)}&exact=true`,
     );
+    if (!refetched.ok) {
+      throw new Error(
+        `Failed to re-fetch group ${groupName} after creation: ${refetched.status} ${await refetched.text()}`,
+      );
+    }
     const refetchedGroups = (await refetched.json()) as KeycloakGroup[];
     const group = refetchedGroups.find((g) => g.name === groupName);
     if (!group) throw new Error(`Group ${groupName} not found after creation`);
@@ -123,6 +138,11 @@ export class KeycloakAdminService {
     const res = await this.adminFetch(
       `/clients?clientId=${encodeURIComponent(this.config.clientId)}`,
     );
+    if (!res.ok) {
+      throw new Error(
+        `Failed to look up client ${this.config.clientId}: ${res.status} ${await res.text()}`,
+      );
+    }
     const clients = (await res.json()) as Array<{ id: string }>;
     if (!clients.length)
       throw new Error(
@@ -136,6 +156,11 @@ export class KeycloakAdminService {
     const res = await this.adminFetch(
       `/clients/${clientInternalId}/protocol-mappers/models`,
     );
+    if (!res.ok) {
+      throw new Error(
+        `Failed to list protocol mappers for client ${this.config.clientId}: ${res.status} ${await res.text()}`,
+      );
+    }
     const mappers = (await res.json()) as Array<{ name: string }>;
     if (mappers.some((m) => m.name === 'tenant_id')) return;
 
