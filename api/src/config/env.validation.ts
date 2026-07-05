@@ -1,7 +1,9 @@
 import * as Joi from 'joi';
 
 export const envSchema = Joi.object({
-  NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
+  NODE_ENV: Joi.string()
+    .valid('development', 'test', 'production')
+    .default('development'),
   PORT: Joi.number().port().default(3000),
   APP_BASE_URL: Joi.string().uri().required(),
   WEB_BASE_URL: Joi.string().uri().required(),

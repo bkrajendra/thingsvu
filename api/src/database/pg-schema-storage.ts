@@ -31,9 +31,12 @@ export class PgSchemaStorage implements UmzugStorage {
 
   async unlogMigration({ name }: { name: string }): Promise<void> {
     await this.ensureTable();
-    await this.sequelize.query(`DELETE FROM ${this.qualifiedTable} WHERE name = $1`, {
-      bind: [name],
-    });
+    await this.sequelize.query(
+      `DELETE FROM ${this.qualifiedTable} WHERE name = $1`,
+      {
+        bind: [name],
+      },
+    );
   }
 
   async executed(): Promise<string[]> {

@@ -13,12 +13,29 @@ export class ControlTenant extends Model {
   static initModel(sequelize: Sequelize): typeof ControlTenant {
     ControlTenant.init(
       {
-        id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+        id: {
+          type: DataTypes.UUID,
+          primaryKey: true,
+          defaultValue: DataTypes.UUIDV4,
+        },
         slug: { type: DataTypes.STRING, unique: true, allowNull: false },
         name: { type: DataTypes.STRING, allowNull: false },
-        schemaName: { type: DataTypes.STRING, field: 'schema_name', unique: true, allowNull: false },
-        status: { type: DataTypes.STRING, allowNull: false, defaultValue: 'provisioning' },
-        keycloakGroupId: { type: DataTypes.STRING, field: 'keycloak_group_id', allowNull: true },
+        schemaName: {
+          type: DataTypes.STRING,
+          field: 'schema_name',
+          unique: true,
+          allowNull: false,
+        },
+        status: {
+          type: DataTypes.STRING,
+          allowNull: false,
+          defaultValue: 'provisioning',
+        },
+        keycloakGroupId: {
+          type: DataTypes.STRING,
+          field: 'keycloak_group_id',
+          allowNull: true,
+        },
       },
       {
         sequelize,

@@ -14,9 +14,13 @@ describe('createSchemaMigrator', () => {
   ];
 
   beforeAll(async () => {
-    sequelize = new Sequelize(process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/iot_platform', {
-      logging: false,
-    });
+    sequelize = new Sequelize(
+      process.env.TEST_DATABASE_URL ??
+        'postgres://postgres:postgres@localhost:5432/iot_platform',
+      {
+        logging: false,
+      },
+    );
     await sequelize.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     await sequelize.query(`CREATE SCHEMA "${schema}"`);
   });

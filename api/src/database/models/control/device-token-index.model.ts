@@ -10,10 +10,26 @@ export class ControlDeviceTokenIndex extends Model {
   static initModel(sequelize: Sequelize): typeof ControlDeviceTokenIndex {
     ControlDeviceTokenIndex.init(
       {
-        tokenHash: { type: DataTypes.STRING, field: 'token_hash', primaryKey: true },
-        tenantId: { type: DataTypes.UUID, field: 'tenant_id', allowNull: false },
-        deviceId: { type: DataTypes.UUID, field: 'device_id', allowNull: false },
-        credentialType: { type: DataTypes.STRING, field: 'credential_type', allowNull: false },
+        tokenHash: {
+          type: DataTypes.STRING,
+          field: 'token_hash',
+          primaryKey: true,
+        },
+        tenantId: {
+          type: DataTypes.UUID,
+          field: 'tenant_id',
+          allowNull: false,
+        },
+        deviceId: {
+          type: DataTypes.UUID,
+          field: 'device_id',
+          allowNull: false,
+        },
+        credentialType: {
+          type: DataTypes.STRING,
+          field: 'credential_type',
+          allowNull: false,
+        },
       },
       {
         sequelize,

@@ -8,7 +8,11 @@ export interface SchemaMigration {
   down?: (schema: string) => string;
 }
 
-export function createSchemaMigrator(sequelize: Sequelize, schema: string, migrations: SchemaMigration[]) {
+export function createSchemaMigrator(
+  sequelize: Sequelize,
+  schema: string,
+  migrations: SchemaMigration[],
+) {
   return new Umzug({
     migrations: migrations.map((m) => ({
       name: m.name,

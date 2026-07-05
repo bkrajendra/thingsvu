@@ -9,8 +9,17 @@ export class ControlPlatformAdmin extends Model {
   static initModel(sequelize: Sequelize): typeof ControlPlatformAdmin {
     ControlPlatformAdmin.init(
       {
-        id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
-        keycloakSub: { type: DataTypes.STRING, field: 'keycloak_sub', unique: true, allowNull: false },
+        id: {
+          type: DataTypes.UUID,
+          primaryKey: true,
+          defaultValue: DataTypes.UUIDV4,
+        },
+        keycloakSub: {
+          type: DataTypes.STRING,
+          field: 'keycloak_sub',
+          unique: true,
+          allowNull: false,
+        },
         email: { type: DataTypes.STRING, allowNull: false },
       },
       {

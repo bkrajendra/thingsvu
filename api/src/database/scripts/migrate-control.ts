@@ -13,9 +13,16 @@ async function main() {
     database: process.env.DB_NAME,
     logging: false,
   });
-  const migrator = createSchemaMigrator(sequelize, 'control', controlMigrations);
+  const migrator = createSchemaMigrator(
+    sequelize,
+    'control',
+    controlMigrations,
+  );
   const applied = await migrator.up();
-  console.log(`Applied ${applied.length} control migration(s):`, applied.map((m) => m.name));
+  console.log(
+    `Applied ${applied.length} control migration(s):`,
+    applied.map((m) => m.name),
+  );
   await sequelize.close();
 }
 
