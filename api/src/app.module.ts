@@ -8,9 +8,18 @@ import { AuthModule } from './auth/auth.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { TenantResolutionMiddleware } from './tenancy/tenant-resolution.middleware';
 import { TenantsModule } from './tenants/tenants.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
-  imports: [ConfigModule, DatabaseModule, RedisModule, AuthModule, TenancyModule, TenantsModule],
+  imports: [
+    ConfigModule,
+    DatabaseModule,
+    RedisModule,
+    AuthModule,
+    TenancyModule,
+    TenantsModule,
+    UsersModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
