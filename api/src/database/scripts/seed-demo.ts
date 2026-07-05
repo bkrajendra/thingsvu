@@ -25,7 +25,10 @@ async function main() {
 
   let tenant = await ControlTenant.findOne({ where: { slug: DEMO_SLUG } });
   if (!tenant) {
-    const provisioned = await provisioning.provision({ slug: DEMO_SLUG, name: 'Demo Tenant' });
+    const provisioned = await provisioning.provision({
+      slug: DEMO_SLUG,
+      name: 'Demo Tenant',
+    });
     tenant = await ControlTenant.findByPk(provisioned.id);
   }
   if (!tenant) throw new Error('Failed to provision or find the demo tenant');
@@ -34,12 +37,14 @@ async function main() {
   await TenantContext.run(
     { tenantId: tenant.id, schemaName: tenant.schemaName, slug: tenant.slug },
     async () => {
-      const ScopedUserProfile = UserProfile.schema(tenant!.schemaName);
-      let profile = await ScopedUserProfile.findOne({ where: { email: DEMO_ADMIN_EMAIL } });
+      const ScopedUserProfile = UserProfile.schema(tenant.schemaName);
+      let profile = await ScopedUserProfile.findOne({
+        where: { email: DEMO_ADMIN_EMAIL },
+      });
       if (!profile) {
         const kcUser = await keycloakAdmin.createUser({
           email: DEMO_ADMIN_EMAIL,
-          tenantId: tenant!.id,
+          tenantId: tenant.id,
           temporaryPassword: DEMO_ADMIN_PASSWORD,
         });
         await keycloakAdmin.assignRealmRole(kcUser.id, 'tenant_admin');
@@ -50,13 +55,17 @@ async function main() {
           role: 'tenant_admin',
           status: 'active',
         });
-        console.log(`Created demo tenant_admin: ${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD} (temporary — Keycloak will prompt a change on first login)`);
+        console.log(
+          `Created demo tenant_admin: ${DEMO_ADMIN_EMAIL} / ${DEMO_ADMIN_PASSWORD} (temporary — Keycloak will prompt a change on first login)`,
+        );
       } else {
         console.log(`Demo tenant_admin already exists: ${DEMO_ADMIN_EMAIL}`);
       }
 
-      const ScopedDevice = Device.schema(tenant!.schemaName);
-      let device = await ScopedDevice.findOne({ where: { name: DEMO_DEVICE_NAME } });
+      const ScopedDevice = Device.schema(tenant.schemaName);
+      let device = await ScopedDevice.findOne({
+        where: { name: DEMO_DEVICE_NAME },
+      });
       if (!device) {
         device = await devicesService.create({ name: DEMO_DEVICE_NAME });
         console.log(`Created demo device: ${device.id}`);
@@ -64,14 +73,20 @@ async function main() {
         console.log(`Demo device already exists: ${device.id}`);
       }
 
-      const existingCredential = await credentialsService.getMetadata(device.id);
+      const existingCredential = await credentialsService.getMetadata(
+        device.id,
+      );
       if (!existingCredential) {
         const { token } = await credentialsService.issueAccessToken(device.id);
-        console.log('\n--- Demo device access token (shown once, save it now) ---');
+        console.log(
+          '\n--- Demo device access token (shown once, save it now) ---',
+        );
         console.log(token);
         console.log('---\n');
       } else {
-        console.log('Demo device already has a credential; delete the device row and re-run to reissue a token.');
+        console.log(
+          'Demo device already has a credential; delete the device row and re-run to reissue a token.',
+        );
       }
     },
   );
