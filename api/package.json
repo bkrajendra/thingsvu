@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "migrate:control": "ts-node -r tsconfig-paths/register src/database/scripts/migrate-control.ts",
     "migrate:tenants": "ts-node -r tsconfig-paths/register src/database/scripts/migrate-tenants.ts",
-    "keycloak:bootstrap": "ts-node -r tsconfig-paths/register src/keycloak/bootstrap-realm.ts"
+    "keycloak:bootstrap": "ts-node -r tsconfig-paths/register src/keycloak/bootstrap-realm.ts",
+    "seed:demo": "ts-node -r tsconfig-paths/register src/database/scripts/seed-demo.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
