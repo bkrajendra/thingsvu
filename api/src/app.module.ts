@@ -9,6 +9,8 @@ import { TenancyModule } from './tenancy/tenancy.module';
 import { TenantResolutionMiddleware } from './tenancy/tenant-resolution.middleware';
 import { TenantsModule } from './tenants/tenants.module';
 import { UsersModule } from './users/users.module';
+import { DeviceProfilesModule } from './device-profiles/device-profiles.module';
+import { DevicesModule } from './devices/devices.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { UsersModule } from './users/users.module';
     TenancyModule,
     TenantsModule,
     UsersModule,
+    DeviceProfilesModule,
+    DevicesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
