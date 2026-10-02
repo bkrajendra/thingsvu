@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Policy — ThingsVU</title>
+<meta name="description" content="Privacy Policy for ThingsVU, the multi-tenant IoT cloud platform." />
+<meta name="robots" content="noindex" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0F14'/%3E%3Cg stroke='%233DE1C4' stroke-width='2.4' stroke-linecap='round' fill='none'%3E%3Cpath d='M5 17 L10 17 L13 9 L16 23 L19 13 L22 17 L27 17'/%3E%3C/g%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#0B0F14; --ink-2:#0E141C; --panel:#121A24; --panel-2:#16202C;
+    --line:#1F2C3A; --line-soft:#18232F; --fg:#E9EFF3; --fg-dim:#9DB0BF; --fg-mute:#657585;
+    --cyan:#3DE1C4; --cyan-deep:#16B69A; --amber:#FFB020;
+    --glow: 0 0 24px rgba(61,225,196,.18); --maxw:1180px; --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--ink);color:var(--fg);font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  ::selection{background:rgba(61,225,196,.28);color:#fff}
+  .tv-wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  h1,h2,h3{font-family:"Space Grotesk",sans-serif;font-weight:600;line-height:1.15;letter-spacing:-.02em}
+
+  .tv-nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:rgba(11,15,20,.72);border-bottom:1px solid var(--line-soft)}
+  .tv-nav__in{display:flex;align-items:center;gap:28px;height:66px}
+  .tv-logo{display:inline-flex;align-items:center;gap:10px;font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:20px;letter-spacing:-.02em}
+  .tv-logo__mark{width:26px;height:26px;flex:none;display:block}
+  .tv-logo__vu{color:var(--cyan);position:relative}
+  .tv-logo__vu::after{content:"";position:absolute;left:0;right:0;bottom:-3px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--cyan),transparent)}
+  .tv-nav__spacer{flex:1}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:500;font-size:15px;padding:11px 18px;border-radius:11px;cursor:pointer;border:1px solid transparent;transition:transform .18s var(--ease),background .2s var(--ease),border-color .2s var(--ease);white-space:nowrap}
+  .btn--primary{background:var(--cyan);color:#04120E;font-weight:600;box-shadow:var(--glow)}
+  .btn--primary:hover{transform:translateY(-1px);background:#54ecd2}
+  .btn--ghost{background:transparent;color:var(--fg);border-color:var(--line)}
+  .btn--ghost:hover{border-color:var(--cyan);color:var(--cyan)}
+
+  .tv-doc{padding:64px 0 96px}
+  .tv-doc__head{max-width:720px;border-bottom:1px solid var(--line-soft);padding-bottom:32px;margin-bottom:40px}
+  .tv-eyebrow{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-mute);display:inline-flex;align-items:center;gap:9px}
+  .tv-eyebrow::before{content:"";width:22px;height:1px;background:var(--line);display:inline-block}
+  .tv-doc__head h1{font-size:clamp(30px,4vw,44px);margin:16px 0 0}
+  .tv-doc__meta{color:var(--fg-mute);font-family:"IBM Plex Mono",monospace;font-size:13px;margin-top:14px}
+
+  .tv-doc__body{max-width:720px}
+  .tv-doc__body h2{font-size:21px;margin:40px 0 14px}
+  .tv-doc__body h2:first-child{margin-top:0}
+  .tv-doc__body p{color:var(--fg-dim);font-size:15.5px;margin-bottom:14px}
+  .tv-doc__body ul{color:var(--fg-dim);font-size:15.5px;margin:0 0 14px 1.3em}
+  .tv-doc__body li{margin-bottom:8px}
+  .tv-doc__body a{color:var(--cyan)}
+  .tv-doc__body a:hover{text-decoration:underline}
+  .tv-doc__body strong{color:var(--fg);font-weight:600}
+  .tv-doc__body table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:14px}
+  .tv-doc__body th,.tv-doc__body td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line-soft);color:var(--fg-dim);vertical-align:top}
+  .tv-doc__body th{color:var(--fg);font-weight:600;font-family:"IBM Plex Mono",monospace;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .tv-callout{border:1px solid var(--line-soft);border-radius:12px;background:var(--panel);padding:16px 18px;color:var(--fg-mute);font-size:13.5px;margin-bottom:28px}
+
+  .tv-footer{border-top:1px solid var(--line-soft);padding:40px 0}
+  .tv-footer__base{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;color:var(--fg-mute);font-size:13px;font-family:"IBM Plex Mono",monospace}
+  .tv-footer__base a{color:var(--fg-dim)}
+  .tv-footer__base a:hover{color:var(--cyan)}
+
+  @media(max-width:520px){ .btn--ghost{display:none} .tv-doc__body table,.tv-doc__body thead,.tv-doc__body tbody,.tv-doc__body th,.tv-doc__body td,.tv-doc__body tr{display:block} .tv-doc__body th{border-bottom:none;padding-bottom:2px} .tv-doc__body td{padding-top:2px} }
+</style>
+</head>
+<body>
+
+<header class="tv-nav">
+  <div class="tv-wrap tv-nav__in">
+    <a class="tv-logo" href="index.html" aria-label="ThingsVU home">
+      <svg class="tv-logo__mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="#111A24"/>
+        <g stroke="#3DE1C4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+          <path d="M5 17 L10 17 L13 9 L16 23 L19 13 L22 17 L27 17"/>
+        </g>
+      </svg>
+      Things<span class="tv-logo__vu">VU</span>
+    </a>
+    <div class="tv-nav__spacer"></div>
+    <a class="btn btn--ghost" href="index.html">Back to home</a>
+    <a class="btn btn--primary" href="index.html#start">Start free</a>
+  </div>
+</header>
+
+<main>
+<section class="tv-doc">
+  <div class="tv-wrap">
+    <div class="tv-doc__head">
+      <span class="tv-eyebrow">Legal</span>
+      <h1>Privacy Policy</h1>
+      <p class="tv-doc__meta">Effective date: October 2, 2026 · Last updated: October 2, 2026</p>
+    </div>
+
+    <div class="tv-doc__body">
+      <div class="tv-callout">
+        This is a general-purpose template, not legal advice. Review it with counsel — in particular to confirm your legal entity, data processing locations, retention periods, and any region-specific obligations (GDPR, CCPA, etc.) before relying on it.
+      </div>
+
+      <h2>1. Overview</h2>
+      <p>This Privacy Policy explains how ThingsVU ("we," "us," "our") collects, uses, and shares information when you use our multi-tenant IoT cloud platform (the "Service"), including our website, dashboards, and APIs. It covers both account holders ("you," "users") and the device telemetry processed on their behalf.</p>
+
+      <h2>2. Information we collect</h2>
+      <table>
+        <thead><tr><th>Category</th><th>Examples</th></tr></thead>
+        <tbody>
+          <tr><td>Account information</td><td>Name, email address, password hash or SSO identifier, organization/tenant name</td></tr>
+          <tr><td>Device &amp; telemetry data</td><td>Device identifiers, access tokens, MQTT credentials, sensor readings and timestamps you configure devices to send</td></tr>
+          <tr><td>Usage data</td><td>API requests, dashboard activity, feature usage, log data such as IP address and user agent</td></tr>
+          <tr><td>Billing information</td><td>Billing contact and plan details; payment card data is handled by our payment processor and not stored by us</td></tr>
+          <tr><td>Support communications</td><td>Messages you send us for support or feedback</td></tr>
+        </tbody>
+      </table>
+
+      <h2>3. How we use information</h2>
+      <ul>
+        <li>To provide, operate, and maintain the Service, including ingesting and displaying telemetry and delivering OTA updates;</li>
+        <li>To authenticate users and devices and enforce tenant isolation;</li>
+        <li>To monitor performance, diagnose issues, and improve reliability and security;</li>
+        <li>To communicate with you about the Service, including updates, security notices, and support;</li>
+        <li>To process payments and manage billing, where applicable;</li>
+        <li>To comply with legal obligations and enforce our Terms of Service.</li>
+      </ul>
+
+      <h2>4. How we share information</h2>
+      <p>We do not sell personal information. We may share information with:</p>
+      <ul>
+        <li><strong>Service providers</strong> who process data on our behalf (e.g., cloud hosting, email delivery, payment processing), under contractual confidentiality obligations;</li>
+        <li><strong>Other users of your tenant</strong>, to the extent your organization's administrators grant them access;</li>
+        <li><strong>Legal and safety authorities</strong>, when required by law, legal process, or to protect the rights, property, or safety of ThingsVU, our users, or the public;</li>
+        <li><strong>A successor entity</strong>, in connection with a merger, acquisition, or sale of assets, with notice to you where required.</li>
+      </ul>
+
+      <h2>5. Data retention</h2>
+      <p>We retain account information for as long as your account is active and as needed to comply with legal obligations, resolve disputes, and enforce agreements. Telemetry data is retained according to the retention settings of your tenant or plan; you can request deletion of your tenant's data subject to any legal retention requirements.</p>
+
+      <h2>6. Data security</h2>
+      <p>We use industry-standard safeguards including encryption in transit (TLS) for all connections, including MQTT brokers, and hashing of stored credentials. Access to production systems is restricted and tenant data is logically isolated. No method of transmission or storage is completely secure, and we cannot guarantee absolute security.</p>
+
+      <h2>7. International data transfers</h2>
+      <p>Depending on where you and our infrastructure providers are located, your information may be processed in a country other than your own. Where required, we rely on appropriate safeguards (such as standard contractual clauses) for such transfers.</p>
+
+      <h2>8. Your rights and choices</h2>
+      <p>Depending on your jurisdiction, you may have rights to access, correct, export, or delete your personal information, or to object to or restrict certain processing. To exercise these rights, contact us at <a href="mailto:hello@thingsvu.com">hello@thingsvu.com</a>. We will respond within the timeframe required by applicable law.</p>
+
+      <h2>9. Cookies</h2>
+      <p>We use session cookies necessary to keep you signed in to the web application. We do not use third-party advertising cookies. You can control cookies through your browser settings, though disabling essential cookies may prevent the Service from functioning.</p>
+
+      <h2>10. Children's privacy</h2>
+      <p>The Service is intended for business and developer use and is not directed to children. We do not knowingly collect personal information from children.</p>
+
+      <h2>11. Changes to this policy</h2>
+      <p>We may update this Privacy Policy from time to time. If changes are material, we will provide reasonable notice (for example, by email or an in-product notice) before they take effect.</p>
+
+      <h2>12. Contact us</h2>
+      <p>Questions about this Privacy Policy or our data practices can be sent to <a href="mailto:hello@thingsvu.com">hello@thingsvu.com</a>.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="tv-footer">
+  <div class="tv-wrap tv-footer__base">
+    <span>© 2026 ThingsVU · thingsvu.com</span>
+    <span><a href="terms.html">Terms of Service</a> · <a href="index.html">Home</a></span>
+  </div>
+</footer>
+
+</body>
+</html>

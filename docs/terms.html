@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Terms of Service — ThingsVU</title>
+<meta name="description" content="Terms of Service for ThingsVU, the multi-tenant IoT cloud platform." />
+<meta name="robots" content="noindex" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0F14'/%3E%3Cg stroke='%233DE1C4' stroke-width='2.4' stroke-linecap='round' fill='none'%3E%3Cpath d='M5 17 L10 17 L13 9 L16 23 L19 13 L22 17 L27 17'/%3E%3C/g%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --ink:#0B0F14; --ink-2:#0E141C; --panel:#121A24; --panel-2:#16202C;
+    --line:#1F2C3A; --line-soft:#18232F; --fg:#E9EFF3; --fg-dim:#9DB0BF; --fg-mute:#657585;
+    --cyan:#3DE1C4; --cyan-deep:#16B69A; --amber:#FFB020;
+    --glow: 0 0 24px rgba(61,225,196,.18); --maxw:1180px; --ease:cubic-bezier(.22,.61,.36,1);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--ink);color:var(--fg);font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  ::selection{background:rgba(61,225,196,.28);color:#fff}
+  .tv-wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  h1,h2,h3{font-family:"Space Grotesk",sans-serif;font-weight:600;line-height:1.15;letter-spacing:-.02em}
+
+  .tv-nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:rgba(11,15,20,.72);border-bottom:1px solid var(--line-soft)}
+  .tv-nav__in{display:flex;align-items:center;gap:28px;height:66px}
+  .tv-logo{display:inline-flex;align-items:center;gap:10px;font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:20px;letter-spacing:-.02em}
+  .tv-logo__mark{width:26px;height:26px;flex:none;display:block}
+  .tv-logo__vu{color:var(--cyan);position:relative}
+  .tv-logo__vu::after{content:"";position:absolute;left:0;right:0;bottom:-3px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--cyan),transparent)}
+  .tv-nav__spacer{flex:1}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:500;font-size:15px;padding:11px 18px;border-radius:11px;cursor:pointer;border:1px solid transparent;transition:transform .18s var(--ease),background .2s var(--ease),border-color .2s var(--ease);white-space:nowrap}
+  .btn--primary{background:var(--cyan);color:#04120E;font-weight:600;box-shadow:var(--glow)}
+  .btn--primary:hover{transform:translateY(-1px);background:#54ecd2}
+  .btn--ghost{background:transparent;color:var(--fg);border-color:var(--line)}
+  .btn--ghost:hover{border-color:var(--cyan);color:var(--cyan)}
+
+  .tv-doc{padding:64px 0 96px}
+  .tv-doc__head{max-width:720px;border-bottom:1px solid var(--line-soft);padding-bottom:32px;margin-bottom:40px}
+  .tv-eyebrow{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-mute);display:inline-flex;align-items:center;gap:9px}
+  .tv-eyebrow::before{content:"";width:22px;height:1px;background:var(--line);display:inline-block}
+  .tv-doc__head h1{font-size:clamp(30px,4vw,44px);margin:16px 0 0}
+  .tv-doc__meta{color:var(--fg-mute);font-family:"IBM Plex Mono",monospace;font-size:13px;margin-top:14px}
+
+  .tv-doc__body{max-width:720px}
+  .tv-doc__body h2{font-size:21px;margin:40px 0 14px}
+  .tv-doc__body h2:first-child{margin-top:0}
+  .tv-doc__body p{color:var(--fg-dim);font-size:15.5px;margin-bottom:14px}
+  .tv-doc__body ul{color:var(--fg-dim);font-size:15.5px;margin:0 0 14px 1.3em}
+  .tv-doc__body li{margin-bottom:8px}
+  .tv-doc__body a{color:var(--cyan)}
+  .tv-doc__body a:hover{text-decoration:underline}
+  .tv-doc__body strong{color:var(--fg);font-weight:600}
+  .tv-callout{border:1px solid var(--line-soft);border-radius:12px;background:var(--panel);padding:16px 18px;color:var(--fg-mute);font-size:13.5px;margin-bottom:28px}
+
+  .tv-footer{border-top:1px solid var(--line-soft);padding:40px 0}
+  .tv-footer__base{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;color:var(--fg-mute);font-size:13px;font-family:"IBM Plex Mono",monospace}
+  .tv-footer__base a{color:var(--fg-dim)}
+  .tv-footer__base a:hover{color:var(--cyan)}
+
+  @media(max-width:520px){ .btn--ghost{display:none} }
+</style>
+</head>
+<body>
+
+<header class="tv-nav">
+  <div class="tv-wrap tv-nav__in">
+    <a class="tv-logo" href="index.html" aria-label="ThingsVU home">
+      <svg class="tv-logo__mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="#111A24"/>
+        <g stroke="#3DE1C4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+          <path d="M5 17 L10 17 L13 9 L16 23 L19 13 L22 17 L27 17"/>
+        </g>
+      </svg>
+      Things<span class="tv-logo__vu">VU</span>
+    </a>
+    <div class="tv-nav__spacer"></div>
+    <a class="btn btn--ghost" href="index.html">Back to home</a>
+    <a class="btn btn--primary" href="index.html#start">Start free</a>
+  </div>
+</header>
+
+<main>
+<section class="tv-doc">
+  <div class="tv-wrap">
+    <div class="tv-doc__head">
+      <span class="tv-eyebrow">Legal</span>
+      <h1>Terms of Service</h1>
+      <p class="tv-doc__meta">Effective date: October 2, 2026 · Last updated: October 2, 2026</p>
+    </div>
+
+    <div class="tv-doc__body">
+      <div class="tv-callout">
+        This is a general-purpose template, not legal advice. Review it with counsel and fill in your legal entity name, registered address, and governing-law jurisdiction before relying on it.
+      </div>
+
+      <h2>1. Agreement to terms</h2>
+      <p>These Terms of Service ("Terms") govern access to and use of ThingsVU (the "Service"), operated by ThingsVU ("we," "us," "our"). By creating an account, provisioning a device, or otherwise using the Service, you agree to be bound by these Terms. If you are using the Service on behalf of an organization, you represent that you have authority to bind that organization, and "you" refers to that organization.</p>
+
+      <h2>2. The Service</h2>
+      <p>ThingsVU is a multi-tenant IoT cloud platform that allows you to register devices, ingest and stream telemetry, build dashboards, and distribute over-the-air (OTA) firmware updates. We may add, change, or remove features at any time, and may suspend or discontinue the Service, in whole or in part, with reasonable notice where practicable.</p>
+
+      <h2>3. Accounts and tenants</h2>
+      <p>You must provide accurate information when creating an account and keep your credentials confidential. You are responsible for all activity under your account and within your tenant, including activity by devices and users you provision. Notify us promptly of any unauthorized access or security incident.</p>
+
+      <h2>4. Acceptable use</h2>
+      <p>You agree not to use the Service to:</p>
+      <ul>
+        <li>Violate any applicable law or third-party right;</li>
+        <li>Upload malicious code, or use the Service to attack, disrupt, or gain unauthorized access to any system;</li>
+        <li>Exceed reasonable rate limits in a way that degrades the Service for other tenants;</li>
+        <li>Reverse engineer the Service except as permitted by law;</li>
+        <li>Resell or sublicense the Service without our prior written consent.</li>
+      </ul>
+
+      <h2>5. Devices, telemetry, and content</h2>
+      <p>You retain ownership of the data your devices send to the Service ("Customer Data"). You grant us a limited license to process, store, and transmit Customer Data solely to provide and improve the Service. You are responsible for ensuring you have the rights to the Customer Data you submit and for the security of credentials issued to your devices.</p>
+
+      <h2>6. Firmware and OTA updates</h2>
+      <p>You are solely responsible for the firmware packages you publish and distribute through the Service, including their safety, legality, and compatibility with target devices. We are not responsible for device malfunction, data loss, or damage resulting from firmware you choose to deploy.</p>
+
+      <h2>7. Fees</h2>
+      <p>Paid plans, where applicable, are billed as described at signup or in an order form. Fees are non-refundable except as required by law or as we expressly state. We may change pricing on prospective notice.</p>
+
+      <h2>8. Suspension and termination</h2>
+      <p>We may suspend or terminate access to the Service if you materially breach these Terms, create risk or legal exposure for us, or if required by law. You may stop using the Service and close your account at any time. Sections that by their nature should survive termination (e.g., payment obligations, disclaimers, limitation of liability) will survive.</p>
+
+      <h2>9. Disclaimers</h2>
+      <p>The Service is provided "as is" and "as available," without warranties of any kind, express or implied, including fitness for a particular purpose, merchantability, and non-infringement. We do not warrant that the Service will be uninterrupted, error-free, or free of harmful components.</p>
+
+      <h2>10. Limitation of liability</h2>
+      <p>To the maximum extent permitted by law, we will not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of data, revenue, or profits, arising from your use of the Service. Our aggregate liability for any claim will not exceed the amount you paid us for the Service in the twelve months preceding the claim.</p>
+
+      <h2>11. Changes to these Terms</h2>
+      <p>We may update these Terms from time to time. If changes are material, we will provide reasonable notice (for example, by email or an in-product notice) before they take effect. Continued use of the Service after changes take effect constitutes acceptance.</p>
+
+      <h2>12. Governing law</h2>
+      <p>These Terms are governed by the laws of [jurisdiction to be specified], without regard to its conflict-of-laws principles. Disputes will be resolved in the courts located in [venue to be specified], and both parties consent to that jurisdiction.</p>
+
+      <h2>13. Contact</h2>
+      <p>Questions about these Terms can be sent to <a href="mailto:hello@thingsvu.com">hello@thingsvu.com</a>.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="tv-footer">
+  <div class="tv-wrap tv-footer__base">
+    <span>© 2026 ThingsVU · thingsvu.com</span>
+    <span><a href="privacy.html">Privacy Policy</a> · <a href="index.html">Home</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
