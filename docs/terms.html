@@ -3,96 +3,181 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#FFFFFF" />
 <title>Terms of Service — ThingsVU</title>
 <meta name="description" content="Terms of Service for ThingsVU, the multi-tenant IoT cloud platform." />
 <meta name="robots" content="noindex" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B0F14'/%3E%3Cg stroke='%233DE1C4' stroke-width='2.4' stroke-linecap='round' fill='none'%3E%3Cpath d='M5 17 L10 17 L13 9 L16 23 L19 13 L22 17 L27 17'/%3E%3C/g%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%232563EB'/%3E%3Cstop offset='1' stop-color='%2314B8A6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='15' fill='url(%23g)'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-family='Inter,Arial,sans-serif' font-weight='800' font-size='30' fill='white'%3ETh%3C/text%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <style>
+
+  /* ============ Tokens — from the ThingsVU brand kit ============ */
   :root{
-    --ink:#0B0F14; --ink-2:#0E141C; --panel:#121A24; --panel-2:#16202C;
-    --line:#1F2C3A; --line-soft:#18232F; --fg:#E9EFF3; --fg-dim:#9DB0BF; --fg-mute:#657585;
-    --cyan:#3DE1C4; --cyan-deep:#16B69A; --amber:#FFB020;
-    --glow: 0 0 24px rgba(61,225,196,.18); --maxw:1180px; --ease:cubic-bezier(.22,.61,.36,1);
+    --navy:#0B1F3B;        /* Deep Blue (primary) */
+    --blue:#2563EB;        /* Blue (trust, tech) */
+    --sky:#06B6F0;         /* gradient end of the "VU" mark */
+    --teal:#14B8A6;        /* Teal (growth, IoT) */
+    --mist:#E5E7EB;        /* Light Gray (background) */
+    --slate:#111827;       /* Dark Slate (text) */
+    --bg:#FFFFFF;
+    --bg-soft:#F5F7FA;
+    --fg:var(--slate);
+    --fg-dim:#4B5668;
+    --fg-mute:#7B8696;
+    --line:rgba(11,31,59,.10);
+    --line-strong:rgba(11,31,59,.16);
+    --grad:linear-gradient(100deg,var(--blue),var(--sky));
+    --grad-brand:linear-gradient(135deg,var(--blue),var(--teal));
+    --radius:24px;
+    --maxw:1120px;
+
+    /* Motion — one vocabulary, everywhere */
+    --out:cubic-bezier(.16,1,.3,1);          /* decisive entrances */
+    --inout:cubic-bezier(.65,0,.35,1);       /* on-screen movement */
+    --t-press:110ms;
+    --t-hover:220ms;
+    --t-reveal:800ms;
   }
+
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--ink);color:var(--fg);font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+  html{scroll-behavior:smooth;scroll-padding-top:72px;-webkit-text-size-adjust:100%}
+  body{
+    background:var(--bg);color:var(--fg);
+    font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:17px;line-height:1.5;letter-spacing:-.011em;
+    font-optical-sizing:auto;-webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
   a{color:inherit;text-decoration:none}
-  ::selection{background:rgba(61,225,196,.28);color:#fff}
-  .tv-wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
-  h1,h2,h3{font-family:"Space Grotesk",sans-serif;font-weight:600;line-height:1.15;letter-spacing:-.02em}
+  ::selection{background:rgba(37,99,235,.2)}
+  :focus-visible{outline:2px solid var(--blue);outline-offset:3px;border-radius:8px}
 
-  .tv-nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:rgba(11,15,20,.72);border-bottom:1px solid var(--line-soft)}
-  .tv-nav__in{display:flex;align-items:center;gap:28px;height:66px}
-  .tv-logo{display:inline-flex;align-items:center;gap:10px;font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:20px;letter-spacing:-.02em}
-  .tv-logo__mark{width:26px;height:26px;flex:none;display:block}
-  .tv-logo__vu{color:var(--cyan);position:relative}
-  .tv-logo__vu::after{content:"";position:absolute;left:0;right:0;bottom:-3px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--cyan),transparent)}
-  .tv-nav__spacer{flex:1}
-  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:500;font-size:15px;padding:11px 18px;border-radius:11px;cursor:pointer;border:1px solid transparent;transition:transform .18s var(--ease),background .2s var(--ease),border-color .2s var(--ease);white-space:nowrap}
-  .btn--primary{background:var(--cyan);color:#04120E;font-weight:600;box-shadow:var(--glow)}
-  .btn--primary:hover{transform:translateY(-1px);background:#54ecd2}
-  .btn--ghost{background:transparent;color:var(--fg);border-color:var(--line)}
-  .btn--ghost:hover{border-color:var(--cyan);color:var(--cyan)}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .mono{font-family:"JetBrains Mono",ui-monospace,monospace;letter-spacing:0}
+  .grad-text{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
 
-  .tv-doc{padding:64px 0 96px}
-  .tv-doc__head{max-width:720px;border-bottom:1px solid var(--line-soft);padding-bottom:32px;margin-bottom:40px}
-  .tv-eyebrow{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-mute);display:inline-flex;align-items:center;gap:9px}
-  .tv-eyebrow::before{content:"";width:22px;height:1px;background:var(--line);display:inline-block}
-  .tv-doc__head h1{font-size:clamp(30px,4vw,44px);margin:16px 0 0}
-  .tv-doc__meta{color:var(--fg-mute);font-family:"IBM Plex Mono",monospace;font-size:13px;margin-top:14px}
+  /* Type scale: tracking tightens as size grows, leading tightens too */
+  h1,h2,h3{font-weight:700;color:var(--navy)}
+  h1{font-size:clamp(44px,8vw,92px);line-height:1.02;letter-spacing:-.045em;font-weight:800}
+  h2{font-size:clamp(34px,5vw,56px);line-height:1.06;letter-spacing:-.035em}
+  h3{font-size:21px;line-height:1.2;letter-spacing:-.02em}
+  .eyebrow{font-size:13px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--blue)}
 
-  .tv-doc__body{max-width:720px}
-  .tv-doc__body h2{font-size:21px;margin:40px 0 14px}
-  .tv-doc__body h2:first-child{margin-top:0}
-  .tv-doc__body p{color:var(--fg-dim);font-size:15.5px;margin-bottom:14px}
-  .tv-doc__body ul{color:var(--fg-dim);font-size:15.5px;margin:0 0 14px 1.3em}
-  .tv-doc__body li{margin-bottom:8px}
-  .tv-doc__body a{color:var(--cyan)}
-  .tv-doc__body a:hover{text-decoration:underline}
-  .tv-doc__body strong{color:var(--fg);font-weight:600}
-  .tv-callout{border:1px solid var(--line-soft);border-radius:12px;background:var(--panel);padding:16px 18px;color:var(--fg-mute);font-size:13.5px;margin-bottom:28px}
+  /* ============ Nav — translucent material, content scrolls under ============ */
+  .nav{
+    position:fixed;top:0;left:0;right:0;z-index:50;
+    background:rgba(255,255,255,.62);
+    -webkit-backdrop-filter:saturate(180%) blur(22px);backdrop-filter:saturate(180%) blur(22px);
+    box-shadow:0 1px 0 transparent;
+    transition:box-shadow var(--t-hover) var(--out),background var(--t-hover) var(--out);
+  }
+  .nav.is-scrolled{box-shadow:0 1px 0 var(--line);background:rgba(255,255,255,.78)}
+  .nav__in{display:flex;align-items:center;gap:32px;height:60px}
 
-  .tv-footer{border-top:1px solid var(--line-soft);padding:40px 0}
-  .tv-footer__base{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;color:var(--fg-mute);font-size:13px;font-family:"IBM Plex Mono",monospace}
-  .tv-footer__base a{color:var(--fg-dim)}
-  .tv-footer__base a:hover{color:var(--cyan)}
+  /* Logo (docs/logo.png), cropped to its ink so spacing is predictable */
+  .logo{position:relative;display:block;flex:none;width:112px;aspect-ratio:1820/470;overflow:hidden}
+  .logo img{position:absolute;left:-4.95%;top:-25.5%;width:109.9%;max-width:none;height:auto;display:block;user-select:none}
+  .nav__links{display:flex;gap:28px;margin-left:8px}
+  .nav__links a{font-size:14px;color:var(--fg-dim);transition:color var(--t-hover) var(--out)}
+  .nav__spacer{flex:1}
+  .nav__actions{display:flex;align-items:center;gap:10px}
+  .nav__toggle{display:none;width:40px;height:40px;border-radius:12px;border:0;background:transparent;color:var(--navy);cursor:pointer;place-items:center}
+  .nav__toggle svg path{transition:transform .35s var(--out),opacity .2s;transform-origin:center}
+  .nav__toggle[aria-expanded="true"] path:nth-child(1){transform:translateY(6px) rotate(45deg)}
+  .nav__toggle[aria-expanded="true"] path:nth-child(2){opacity:0}
+  .nav__toggle[aria-expanded="true"] path:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
 
-  @media(max-width:520px){ .btn--ghost{display:none} }
+  /* ============ Buttons: feedback on press, not on release ============ */
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    font:600 15px/1 Inter,sans-serif;letter-spacing:-.01em;
+    padding:14px 24px;border-radius:999px;border:0;cursor:pointer;white-space:nowrap;
+    transition:transform var(--t-press) var(--out),background var(--t-hover) var(--out),box-shadow var(--t-hover) var(--out),color var(--t-hover) var(--out);
+    -webkit-tap-highlight-color:transparent;
+  }
+  .btn:active{transform:scale(.96)}
+  .btn--sm{padding:9px 16px;font-size:13.5px}
+  .btn--primary{background:var(--blue);color:#fff;box-shadow:0 1px 2px rgba(37,99,235,.3),0 8px 20px -8px rgba(37,99,235,.55)}
+  .btn--soft{background:rgba(11,31,59,.06);color:var(--navy)}
+  .btn--light{background:#fff;color:var(--navy)}
+  .btn--glass{background:rgba(255,255,255,.12);color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}
+  .btn--text{padding:14px 6px;color:var(--blue)}
+  .btn--text .arr{display:inline-block;transition:transform var(--t-hover) var(--out)}
+  @media (hover:hover){
+    .nav__links a:hover{color:var(--navy)}
+    .btn--primary:hover{background:#1d54d4;box-shadow:0 1px 2px rgba(37,99,235,.3),0 12px 28px -8px rgba(37,99,235,.65)}
+    .btn--soft:hover{background:rgba(11,31,59,.1)}
+    .btn--glass:hover{background:rgba(255,255,255,.2)}
+    .btn--text:hover .arr{transform:translateX(4px)}
+  }
+
+  
+  .doc{padding:136px 0 120px}
+  .doc__head{max-width:760px;margin:0 auto 48px;padding-bottom:36px;border-bottom:1px solid var(--line)}
+  .doc__head h1{font-size:clamp(38px,6vw,64px);margin:14px 0 0}
+  .doc__meta{color:var(--fg-mute);font-size:14px;margin-top:16px}
+  .doc__body{max-width:760px;margin:0 auto}
+  .doc__body h2{font-size:24px;letter-spacing:-.025em;margin:48px 0 14px}
+  .doc__body h2:first-child{margin-top:0}
+  .doc__body p{color:var(--fg-dim);font-size:16.5px;line-height:1.6;margin-bottom:14px}
+  .doc__body ul{color:var(--fg-dim);font-size:16.5px;line-height:1.6;margin:0 0 14px 1.3em}
+  .doc__body li{margin-bottom:8px}
+  .doc__body a{color:var(--blue);text-decoration:underline;text-decoration-color:rgba(37,99,235,.3);text-underline-offset:3px;transition:text-decoration-color var(--t-hover) var(--out)}
+  @media (hover:hover){.doc__body a:hover{text-decoration-color:currentColor}}
+  .doc__body strong{color:var(--navy);font-weight:600}
+  .doc__body table{width:100%;border-collapse:separate;border-spacing:0;margin:0 0 24px;font-size:15px;border-radius:16px;overflow:hidden;box-shadow:inset 0 0 0 1px var(--line)}
+  .doc__body th,.doc__body td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line);color:var(--fg-dim);vertical-align:top}
+  .doc__body tr:last-child td{border-bottom:0}
+  .doc__body th{background:var(--bg-soft);color:var(--navy);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+  .callout{border-radius:16px;background:var(--bg-soft);box-shadow:inset 0 0 0 1px var(--line);padding:16px 20px;color:var(--fg-dim);font-size:14.5px;margin-bottom:36px}
+  .footer{background:var(--bg-soft);padding:32px 0;font-size:13px}
+  .footer__base{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;color:var(--fg-mute)}
+  .footer__base a{color:var(--fg-dim);transition:color var(--t-hover) var(--out)}
+  @media (hover:hover){.footer__base a:hover{color:var(--blue)}}
+  @media(max-width:560px){.nav__actions .btn--soft{display:none}.doc{padding-top:108px}.doc__body table,.doc__body thead,.doc__body tbody,.doc__body th,.doc__body td,.doc__body tr{display:block}.doc__body th{border-bottom:0;padding-bottom:4px}.doc__body td{padding-top:4px}.doc__body tr:last-child td{border-bottom:1px solid var(--line)}}
+/* ============ Accessibility ============ */
+  @media(prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation:none!important;transition-duration:.01ms!important;transition-delay:0s!important}
+    .rise,.reveal{opacity:1;transform:none;filter:none}
+    .console{transform:none}
+    .check path{stroke-dashoffset:0}
+  }
+  @media(prefers-reduced-transparency:reduce){
+    .nav,.nav__links{background:#fff;-webkit-backdrop-filter:none;backdrop-filter:none}
+    .glass{background:#14305A;-webkit-backdrop-filter:none;backdrop-filter:none}
+    .pill{background:#fff;-webkit-backdrop-filter:none;backdrop-filter:none}
+  }
+  @media(prefers-contrast:more){
+    :root{--fg-dim:#2B3445;--fg-mute:#4B5668;--line:rgba(11,31,59,.35)}
+  }
 </style>
 </head>
 <body>
 
-<header class="tv-nav">
-  <div class="tv-wrap tv-nav__in">
-    <a class="tv-logo" href="index.html" aria-label="ThingsVU home">
-      <svg class="tv-logo__mark" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="7" fill="#111A24"/>
-        <g stroke="#3DE1C4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
-          <path d="M5 17 L10 17 L13 9 L16 23 L19 13 L22 17 L27 17"/>
-        </g>
-      </svg>
-      Things<span class="tv-logo__vu">VU</span>
-    </a>
-    <div class="tv-nav__spacer"></div>
-    <a class="btn btn--ghost" href="index.html">Back to home</a>
-    <a class="btn btn--primary" href="index.html#start">Start free</a>
+<header class="nav" id="nav">
+  <div class="wrap nav__in">
+    <a class="logo" href="index.html" aria-label="ThingsVU home"><img src="logo.png" alt="ThingsVU" width="2000" height="667" /></a>
+    <div class="nav__spacer"></div>
+    <div class="nav__actions">
+      <a class="btn btn--soft btn--sm" href="index.html">Back to home</a>
+      <a class="btn btn--primary btn--sm" href="index.html#start">Start free</a>
+    </div>
   </div>
 </header>
 
 <main>
-<section class="tv-doc">
-  <div class="tv-wrap">
-    <div class="tv-doc__head">
-      <span class="tv-eyebrow">Legal</span>
+<section class="doc">
+  <div class="wrap">
+    <div class="doc__head">
+      <span class="eyebrow">Legal</span>
       <h1>Terms of Service</h1>
-      <p class="tv-doc__meta">Effective date: October 2, 2026 · Last updated: October 2, 2026</p>
+      <p class="doc__meta">Effective date: October 2, 2026 · Last updated: October 2, 2026</p>
     </div>
-
-    <div class="tv-doc__body">
-      <div class="tv-callout">
+    <div class="doc__body">
+      <div class="callout">
         This is a general-purpose template, not legal advice. Review it with counsel and fill in your legal entity name, registered address, and governing-law jurisdiction before relying on it.
       </div>
 
@@ -146,12 +231,15 @@
 </section>
 </main>
 
-<footer class="tv-footer">
-  <div class="tv-wrap tv-footer__base">
+<footer class="footer">
+  <div class="wrap footer__base">
     <span>© 2026 ThingsVU · thingsvu.com</span>
     <span><a href="privacy.html">Privacy Policy</a> · <a href="index.html">Home</a></span>
   </div>
 </footer>
 
+<script>
+(function(){var n=document.getElementById('nav');function f(){n.classList.toggle('is-scrolled',window.scrollY>8)}window.addEventListener('scroll',f,{passive:true});f();})();
+</script>
 </body>
 </html>
